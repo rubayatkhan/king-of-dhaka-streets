@@ -1,0 +1,175 @@
+import './style.css';
+import { Simulation, VEHICLES } from './simulation';
+import { World } from './world';
+import { GameAudio } from './audio';
+import { STAGES, type Neighborhood } from './campaign';
+import { loadProgress, completeStage, availableStage } from './progress';
+import { sendFeedback, type FeedbackKind } from './feedback';
+
+const $=<T extends HTMLElement=HTMLElement>(s:string)=>document.querySelector<T>(s)!;
+const crown='<svg viewBox="0 0 32 28" fill="none"><path d="m3 7 6 6L16 3l7 10 6-6-4 17H7L3 7Z" stroke="currentColor" stroke-width="2"/><path d="M8 20h16" stroke="currentColor" stroke-width="2"/></svg>';
+const sound='<svg viewBox="0 0 24 24" fill="none"><path d="M11 5 6 9H3v6h3l5 4V5Z" stroke="currentColor" stroke-width="1.7"/><path d="M15 8q6 4 0 8m3-11q9 7 0 14" stroke="currentColor" stroke-width="1.5"/></svg>';
+const pauseIcon='<svg viewBox="0 0 24 24"><path d="M7 5v14M17 5v14" stroke="currentColor" stroke-width="3"/></svg>';
+const bell='<svg viewBox="0 0 32 32" fill="none"><path d="M7 21c4-3 0-13 9-13s5 10 9 13H7Zm6 4h6M16 5v3" stroke="currentColor" stroke-width="2.3" stroke-linecap="round"/></svg>';
+function vehicleIcon(i:number){
+ if(i<3)return `<svg viewBox="0 0 64 40" fill="none"><circle cx="14" cy="28" r="9"/><circle cx="50" cy="28" r="9"/><path d="m14 28 10-17 12 17H14Zm10-17h20l6 17M36 28l8-22h7M20 8h10"/>${i===1?'<path d="M32 7q8-13 22 0v9H32V7Z"/>':''}${i===2?'<path d="m25 14 11 2 4 7H25Z"/>':''}</svg>`;
+ return `<svg viewBox="0 0 64 40" fill="none"><circle cx="15" cy="31" r="6"/><circle cx="49" cy="31" r="6"/><path d="M9 31H5V18l9-10h${i===4?'17v17h28V10H34':'28l10 10h7v13h-4'}M21 31h22M15 11l-5 10h38L40 11H15Z"/></svg>`;
+}
+const reviewMode=import.meta.env.DEV&&new URLSearchParams(location.search).has('review');
+function readSave(){try{return loadProgress(localStorage.getItem('dhaka-streets-v2'),localStorage.getItem('dhaka-streets-v1'),matchMedia('(prefers-reduced-motion: reduce)').matches);}catch{return loadProgress(null,null);}}
+const save=readSave();
+const persist=()=>{if(reviewMode)return;try{localStorage.setItem('dhaka-streets-v2',JSON.stringify(save));}catch{/* A full or private store never prevents play. */}};
+let selected=Math.floor(availableStage(save)/3),lesson=availableStage(save)%3,sim=new Simulation(selected,27,lesson),world:World|undefined;
+const stageId=()=>selected*3+lesson;
+const districts:Record<Neighborhood,{name:string;bangla:string;tag:string}>={bazaar:{name:'Shankhari Bazaar',bangla:'শাঁখারীবাজার',tag:'Balconies, bakarkhani & bicycle bells'},riverfront:{name:'Sadarghat',bangla:'সদরঘাট',tag:'Launch horns over the Buriganga'},boulevard:{name:'Karwan Bazar',bangla:'কারওয়ান বাজার',tag:'Wholesale hustle. Rush-hour nerve.'}};
+const deference=['Find your own gap','A little room for a rickshaw','Small traffic starts to yield','Your presence opens a lane','The city makes way for the king'];
+const audio=new GameAudio();audio.setMuted(save.muted);
+let leftHeld=false,rightHeld=false;
+let steer=0,brake=false,desired=0,accumulator=0,last=performance.now(),screen='menu',toastUntil=0,feedbackUntil=0,nudgeUntil=0,seed=27,ending=false,nextVendor=12,splashUntil=0,hornUntil=0,comboUntil=0,districtUntil=0,lastDistrict:Neighborhood=sim.neighborhood,toastPriority=0,lastFailure='';
+const keys=new Set<string>();
+let renderDirty=true,renderedSimulation:Simulation|undefined,renderedStatus='';
+$('#app').innerHTML=`
+ <canvas id="game" aria-label="Three-dimensional Old Dhaka street"></canvas>
+ <div class="vignette" aria-hidden="true"></div><div id="impact" aria-hidden="true"></div><div id="paan-splash" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></div>
+ <section id="menu" class="screen menu">
+  <div class="cover" aria-hidden="true"></div><div class="cover-shade" aria-hidden="true"></div>
+  <header class="masthead"><a class="brand" href="#" aria-label="King of Dhaka Streets home">${crown}<span>ঢাকার রাজা</span></a><div class="top-actions"><span class="edition">15 missions · One city · Your crown</span><button class="beta-btn feedback-open" aria-label="Beta tester feedback">💡<span>Beta ideas</span></button><button class="icon-btn sound-toggle" aria-label="Toggle sound">${sound}</button><button id="settings-open" class="icon-btn" aria-label="Settings">⚙</button></div></header>
+  <div class="menu-content"><div class="little-route"><span class="sun-dot"></span>Old Dhaka, golden hour</div>
+   <h1><span>KING OF</span><strong>DHAKA</strong><span class="streets">STREETS</span></h1>
+   <p class="intro">Small bell. Big dreams.<br>Earn your wheels in the city that never gives way.</p>
+   <div class="play-row"><button id="start" class="primary">Let's ride <span>↗</span></button><span id="ride-label">Bicycle · Chapter 1</span></div>
+   <p class="menu-tip">Best with sound. Better with a little nerve.</p>
+  </div>
+  <aside class="mission-board" id="mission-board" aria-label="Choose a mission"></aside>
+  <footer class="garage"><div class="garage-heading"><span>Your road to royalty</span><span id="garage-progress">1 / 5 rides unlocked</span></div><div id="vehicles" class="vehicles"></div></footer>
+  <div class="credit">Concept art shown · Play to enter the 3D world</div>
+ </section>
+ <section id="hud" class="hidden" aria-label="Ride dashboard">
+  <div class="hud-top"><div class="route-card"><span id="chapter-label">Chapter 1 / Bicycle</span><strong id="district-name">Shankhari Bazaar</strong><div class="route-progress"><i id="progress"></i></div><span id="remaining">650 m to destination</span><div id="mission-goal"></div></div>
+  <div class="hud-score"><span id="score">0000</span><small>street rep</small></div><div class="hud-buttons"><button class="icon-btn sound-toggle" aria-label="Toggle sound">${sound}</button><button id="pause" class="icon-btn" aria-label="Pause ride">${pauseIcon}</button></div></div>
+  <div id="rear-alert" class="rear-alert hidden" role="status" aria-live="polite"><span id="rear-title">Bus behind!</span><div class="rear-road"><i id="rear-vehicle"></i><b id="rear-player"></b></div><small>Leave the highlighted line</small></div><div id="district-banner"><small>NOW ENTERING</small><strong></strong><span></span></div><div id="toast" role="status" aria-live="polite"></div><div id="combo"></div><div id="authority-hud"></div>
+  <div class="hud-bottom"><div class="steer-controls"><span class="control-label">Steer</span><div class="steer-pad" id="steer-pad"><button id="left" aria-label="Steer left">‹</button><span class="steer-line"></span><button id="right" aria-label="Steer right">›</button></div></div>
+   <div class="speedometer"><div><strong id="speed">0</strong><span>km/h</span></div><div id="hearts" aria-label="3 composure remaining">● ● ●</div></div>
+   <div class="action-controls"><button id="brake" class="brake-btn" aria-label="Hold to brake"><svg viewBox="0 0 30 30" fill="none"><circle cx="15" cy="15" r="9" stroke="currentColor" stroke-width="2"/><path d="M4 8q-5 7 0 14M26 8q5 7 0 14M15 9v8m0 3v1" stroke="currentColor" stroke-width="2"/></svg><span>Brake</span></button><button id="horn" class="horn-btn" aria-label="Ring bell">${bell}<span id="horn-label">Bell</span></button></div>
+  </div><div id="tutorial">Hold arrows to steer · Brake for space · Watch behind</div>
+ </section>
+ <section id="overlay" class="overlay hidden" role="dialog" aria-modal="true" aria-label="Ride menu"><div class="panel" id="panel"></div></section>
+ <section id="settings" class="overlay hidden" role="dialog" aria-modal="true" aria-label="Ride settings"><div class="panel settings-panel"><span class="panel-kicker">Make yourself comfortable</span><h2>Your ride, your way.</h2><label>Graphics <select id="quality"><option value="auto">Adaptive</option><option value="low">Battery saver</option><option value="high">Detailed</option></select></label><label>Gentler camera <input type="checkbox" id="reduced"/></label><label>Sound <input type="checkbox" id="sound-setting"/></label><p class="small-note">Real street ambience, original sound effects and AI-generated Bangla voices. Captions always stay on. <a href="${import.meta.env.BASE_URL}audio/credits.html" target="_blank" rel="noopener">Sound credits</a></p><p class="small-note">A fictional route inspired by Old Dhaka. Progress saves on this device. Keyboard: ← → to steer, ↓ or Space to brake, H to honk, Esc to pause.</p><button id="settings-close" class="primary">Back to the street</button></div></section>
+ <section id="feedback" class="overlay hidden" role="dialog" aria-modal="true" aria-labelledby="feedback-title"><form id="feedback-form" class="panel feedback-panel" novalidate><span class="panel-kicker">Beta tester HQ</span><h2 id="feedback-title">Make the game better.</h2><p>What should we add, fix or keep? Every note goes straight to the game maker.</p>
+  <fieldset class="feedback-kinds"><legend>This is…</legend><label><input type="radio" name="kind" value="idea" checked/><span>💡 A new idea</span></label><label><input type="radio" name="kind" value="bug"/><span>🛠 Something broken</span></label><label><input type="radio" name="kind" value="love"/><span>❤️ Something I love</span></label></fieldset>
+  <label class="field">Your idea<textarea id="feedback-message" rows="4" maxlength="2000" placeholder="A boat race at Sadarghat! A mango truck! Faster rickshaws!"></textarea></label>
+  <label class="field">Your first name <small>(optional)</small><input id="feedback-name" maxlength="40" autocomplete="off"/></label>
+  <input id="feedback-botcheck" class="botcheck" type="text" tabindex="-1" autocomplete="off" aria-hidden="true"/>
+  <p id="feedback-status" role="status" aria-live="polite"></p><button type="submit" id="feedback-send" class="primary">Send to the game maker <span>↗</span></button><button type="button" id="feedback-close" class="secondary">Back to the game</button></form></section>
+ <div id="rotate-hint">↻ Turn your phone for a wider view</div>
+`;
+const stars=(count:number)=>Array.from({length:3},(_,i)=>`<span class="${i<count?'earned':''}">★</span>`).join('');
+function drawGarage(){
+ const unlocked=availableStage(save),unlockedVehicle=Math.floor(unlocked/3),id=stageId(),stage=STAGES[id];
+ $('#garage-progress').textContent=`${save.stars.filter(n=>n>0).length} / 15 missions · ${save.stars.reduce((a,b)=>a+b,0)} stars`;
+ $('#vehicles').innerHTML=VEHICLES.map((v,i)=>`<button class="vehicle ${i===selected?'selected':''} ${i>unlockedVehicle?'locked':''}" data-vehicle="${i}" aria-label="${v.name}${i>unlockedVehicle?', preview locked chapter':''}" aria-pressed="${i===selected}"><span class="vehicle-art">${vehicleIcon(i)}</span><span class="vehicle-name">${v.name}</span><span class="vehicle-detail">${i>unlockedVehicle?'Locked chapter':`${save.stars.slice(i*3,i*3+3).filter(n=>n>0).length}/3 missions`}</span></button>`).join('');
+ $('#mission-board').innerHTML=`<div class="mission-heading"><span>CHAPTER ${selected+1} · ${VEHICLES[selected].bangla}</span><strong>${VEHICLES[selected].name}</strong></div><div class="authority-preview"><div class="authority-bars">${VEHICLES.map((_,i)=>`<i class="${i<=selected?'on':''}"></i>`).join('')}</div><span>${deference[selected]}</span></div><div class="mission-list">${STAGES.slice(selected*3,selected*3+3).map(m=>`<button data-mission="${m.lessonIndex}" class="mission-choice ${m.id===id?'selected':''}" ${m.id>unlocked?'disabled':''}><b>${String(m.lessonIndex+1).padStart(2,'0')}</b><span>${m.name}<small>${m.id>unlocked?'Complete the previous mission':m.lessonIndex===0?'Read the city':m.lessonIndex===1?'React to the street':'Master the chaos'}</small></span><em class="stars" aria-label="${save.stars[m.id]} of 3 stars">${stars(save.stars[m.id])}</em></button>`).join('')}</div><p class="mission-objective">${stage.objective}</p>`;
+ $('#ride-label').textContent=`Mission ${lesson+1} / 3 · ${districts[stage.neighborhood].name}`;
+ const startButton=$<HTMLButtonElement>('#start');startButton.disabled=id>unlocked;
+ startButton.innerHTML=id>unlocked?'Chapter locked':`${save.stars[id]?'Ride again':"Let's ride"} <span>↗</span>`;
+ document.querySelectorAll<HTMLButtonElement>('[data-vehicle]').forEach(b=>b.onclick=()=>{selected=Number(b.dataset.vehicle);lesson=Math.max(0,Math.min(2,unlocked-selected*3));sim=new Simulation(selected,seed,lesson);drawGarage();});
+ document.querySelectorAll<HTMLButtonElement>('[data-mission]').forEach(b=>b.onclick=()=>{lesson=Number(b.dataset.mission);sim=new Simulation(selected,seed,lesson);drawGarage();});
+}
+function updateSound(){document.querySelectorAll<HTMLButtonElement>('.sound-toggle').forEach(b=>{b.classList.toggle('muted',save.muted);b.setAttribute('aria-label',save.muted?'Turn sound on':'Mute sound');});$<HTMLInputElement>('#sound-setting').checked=!save.muted;}
+function clearInput(){keys.clear();leftHeld=rightHeld=false;desired=steer=0;brake=false;nudgeUntil=0;document.querySelectorAll('.held').forEach(b=>b.classList.remove('held'));}
+async function start(){
+ if(!reviewMode&&stageId()>availableStage(save))return;
+ if(!world){$('#start').textContent='Opening the street…';return;}
+ clearInput();audio.resetRide();lastFailure='';toastPriority=0;toastUntil=feedbackUntil=splashUntil=hornUntil=comboUntil=0;$('#toast').classList.remove('shown');$('#combo').classList.remove('visible');$('#impact').classList.remove('hit');$('#paan-splash').classList.remove('splashed');sim=new Simulation(selected,seed++,lesson);sim.start();screen='playing';ending=false;nextVendor=12;lastDistrict=sim.neighborhood;announceDistrict();
+ $('#hud').inert=false;$('#menu').classList.add('hidden');$('#overlay').classList.add('hidden');$('#hud').classList.remove('hidden');
+ $('#chapter-label').textContent=`${VEHICLES[selected].name} · Mission ${lesson+1}/3`;$('#horn-label').textContent=selected<2?'Bell':'Horn';$('#horn').setAttribute('aria-label',selected<2?'Ring bell':'Sound horn');
+ $('#authority-hud').textContent=deference[selected];showToast(`${sim.stage.name} · ${sim.stage.objective}`);
+ try{await audio.init();}catch{showToast('Sound unavailable. Captions are on.');}
+}
+function showToast(text:string,urgent=false){const now=performance.now();if(!urgent&&toastPriority&&now<toastUntil)return;toastPriority=urgent?1:0;$('#toast').textContent=text;$('#toast').classList.toggle('urgent',urgent);$('#toast').classList.add('shown');toastUntil=now+(urgent?3000:3200);}
+function announceDistrict(){const district=districts[sim.neighborhood];$('#district-name').textContent=district.name;$('#district-banner strong').textContent=district.bangla;$('#district-banner span').textContent=district.name;$('#district-banner').classList.add('visible');districtUntil=performance.now()+2200;}
+function horn(){if(sim.status!=='playing')return;sim.horn();}
+function togglePause(){if(screen!=='playing')return;if(sim.status==='playing'){sim.pause();clearInput();$('#hud').inert=true;$('#panel').innerHTML=`<span class="panel-kicker">Take a breather</span><h2>The city can wait.</h2><p>Your ride is paused.</p><button id="resume" class="primary">Keep riding ↗</button><button id="quit" class="secondary">Back to the garage</button><button class="secondary feedback-open">💡 Share an idea</button>`;$('#overlay').classList.remove('hidden');$('#resume').focus();bindFeedbackButtons();$('#resume').onclick=()=>{$('#hud').inert=false;sim.resume();$('#overlay').classList.add('hidden');void audio.init();};$('#quit').onclick=menu;}else if(sim.status==='paused'){$('#hud').inert=false;sim.resume();$('#overlay').classList.add('hidden');}}
+function menu(){clearInput();audio.resetRide();$('#rear-alert').classList.add('hidden');$('#district-banner').classList.remove('visible');$('#hud').inert=false;screen='menu';$('#hud').classList.add('hidden');$('#overlay').classList.add('hidden');$('#menu').classList.remove('hidden');sim=new Simulation(selected,seed,lesson);drawGarage();}
+function finish(){
+ if(ending)return;ending=true;clearInput();audio.resetRide();$('#hud').inert=true;$('#rear-alert').classList.add('hidden');
+ const won=sim.status==='won',id=stageId(),previousBest=save.best[id],graduated=won&&lesson===2&&selected<4,nextId=Math.min(14,id+1);
+ if(won){completeStage(save,id,sim.score,sim.stars);persist();audio.finish();}else audio.loss();
+ const next=STAGES[nextId],title=won?(id===14?'ঢাকার রাজা!':graduated?`${VEHICLES[selected+1].name} unlocked!`:'Made it, boss.'):'The city got you.';
+ const cause=lastFailure;
+ $('#panel').innerHTML=`<span class="panel-kicker">${won?sim.rank:'Take a breath. Find a new gap.'}</span><h2>${title}</h2>${won?`<div class="result-stars stars">${stars(sim.stars)}</div>`:''}<p>${won?(graduated?`${VEHICLES[selected+1].bangla} · ${deference[selected+1]}`:id===14?'Fifteen missions. Five rides. One city that finally makes way.':`Next: ${next.name}. Complete all three missions to earn your next ride.`):(cause||'Watch the warning, leave its line, and brake to make space.')}</p><div class="result-stats"><div><strong>${sim.score.toLocaleString()}</strong><span>${sim.score>previousBest?'personal best':'street rep'}</span></div><div><strong>${sim.nearMisses}</strong><span>close shaves</span></div><div><strong>×${sim.maxCombo}</strong><span>best chain</span></div></div>${won?`<p class="medal-note">Gold needs all 3 hearts, ${sim.stage.nearMissTarget} close shaves and a finish within ${sim.stage.parTime}s. A slower finish still advances.</p>`:''}<button id="again" class="primary">${won&&id<14?(graduated?`Take the ${VEHICLES[selected+1].name.toLowerCase()}`:'Next mission'):'Try again'} ↗</button><button id="garage" class="secondary">Back to the garage</button>`;
+ $('#overlay').classList.remove('hidden');$('#again').focus();$('#again').onclick=()=>{if(won&&id<14){selected=next.vehicleIndex;lesson=next.lessonIndex;}void start();};$('#garage').onclick=menu;
+}
+$('#start').onclick=()=>void start();$('#pause').onclick=togglePause;$('#horn').onclick=horn;
+$('.brand').onclick=e=>{e.preventDefault();menu();};
+const closeSettings=()=>{$('#settings').classList.add('hidden');$('#menu').inert=false;$('#settings-open').focus();persist();};
+$('#settings-open').onclick=()=>{$('#settings').classList.remove('hidden');$('#menu').inert=true;$('#quality').focus();};$('#settings-close').onclick=closeSettings;
+window.addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('#settings').classList.contains('hidden')){e.preventDefault();closeSettings();}if(e.key==='Escape'&&feedbackOpen()){e.preventDefault();closeFeedback();}});
+const feedbackOpen=()=>!$('#feedback').classList.contains('hidden');
+let feedbackReturn:HTMLElement|null=null,feedbackBehind:HTMLElement=$('#menu');
+function openFeedback(from:HTMLElement){feedbackReturn=from;feedbackBehind=screen==='playing'?$('#overlay'):$('#menu');feedbackBehind.inert=true;$('#feedback-status').textContent='';$('#feedback-status').className='';$('#feedback').classList.remove('hidden');$('#feedback-message').focus();}
+function closeFeedback(){$('#feedback').classList.add('hidden');feedbackBehind.inert=false;feedbackReturn?.focus();}
+function bindFeedbackButtons(){document.querySelectorAll<HTMLButtonElement>('.feedback-open').forEach(b=>b.onclick=()=>openFeedback(b));}
+bindFeedbackButtons();$('#feedback-close').onclick=closeFeedback;
+$<HTMLFormElement>('#feedback-form').onsubmit=async e=>{e.preventDefault();const send=$<HTMLButtonElement>('#feedback-send'),status=$('#feedback-status');if(send.disabled)return;
+ const kind=($<HTMLInputElement>('#feedback-form input[name="kind"]:checked').value) as FeedbackKind,message=$<HTMLTextAreaElement>('#feedback-message');
+ send.disabled=true;status.className='';status.textContent='Sending…';
+ const result=await sendFeedback(import.meta.env.VITE_WEB3FORMS_KEY,{name:$<HTMLInputElement>('#feedback-name').value,kind,message:message.value,botcheck:$<HTMLInputElement>('#feedback-botcheck').value},{vehicle:VEHICLES[selected].name,mission:STAGES[stageId()].name,progress:`${save.stars.filter(n=>n>0).length} / ${STAGES.length} missions`,device:`${navigator.userAgent} · ${innerWidth}×${innerHeight}`});
+ send.disabled=false;status.className=result.ok?'sent':'error';status.textContent=result.ok?'Got it — thank you, beta tester! 🎉 Send another any time.':result.reason;if(result.ok)message.value='';else message.focus();};
+$('#quality').addEventListener('change',e=>{const q=(e.target as HTMLSelectElement).value;save.quality=q==='low'||q==='high'?q:'auto';world?.setQuality(save.quality);});
+$('#reduced').addEventListener('change',e=>{save.reduced=(e.target as HTMLInputElement).checked;world?.setReduced(save.reduced);});
+$('#sound-setting').addEventListener('change',e=>{save.muted=!(e.target as HTMLInputElement).checked;audio.setMuted(save.muted);updateSound();persist();});
+$('#quality').setAttribute('value',save.quality);($('#quality') as HTMLSelectElement).value=save.quality;($('#reduced') as HTMLInputElement).checked=save.reduced;
+for(const b of document.querySelectorAll<HTMLButtonElement>('.sound-toggle'))b.onclick=()=>{save.muted=!save.muted;audio.setMuted(save.muted);void audio.init();persist();updateSound();};
+function hold(id:string,on:()=>void,off:()=>void){const b=$(id);b.addEventListener('pointerdown',e=>{if(sim.status!=='playing')return;e.preventDefault();b.setPointerCapture(e.pointerId);nudgeUntil=0;on();b.classList.add('held');});for(const event of ['pointerup','pointercancel','lostpointercapture'])b.addEventListener(event,()=>{off();b.classList.remove('held');});}
+const heldSteer=()=>desired=Number(rightHeld)-Number(leftHeld);
+hold('#left',()=>{leftHeld=true;heldSteer();},()=>{leftHeld=false;heldSteer();});hold('#right',()=>{rightHeld=true;heldSteer();},()=>{rightHeld=false;heldSteer();});hold('#brake',()=>brake=true,()=>brake=false);
+// Click also gives keyboard/assistive activation a brief, predictable steering nudge.
+$('#left').addEventListener('click',e=>{if(e.detail===0){desired=-1;nudgeUntil=performance.now()+180;}});$('#right').addEventListener('click',e=>{if(e.detail===0){desired=1;nudgeUntil=performance.now()+180;}});
+window.addEventListener('keydown',e=>{if(feedbackOpen()||e.defaultPrevented)return;if(screen!=='playing'||!['ArrowLeft','ArrowRight','ArrowDown','a','d','s',' ','h','Escape'].includes(e.key))return;e.preventDefault();keys.add(e.key);if(e.key==='Escape'&&!e.repeat)togglePause();if(e.key==='h'&&!e.repeat)horn();});window.addEventListener('keyup',e=>keys.delete(e.key));
+window.addEventListener('blur',()=>{clearInput();if(sim.status==='playing')togglePause();});document.addEventListener('visibilitychange',()=>{if(document.hidden&&sim.status==='playing')togglePause();});window.addEventListener('resize',()=>{world?.resize();renderDirty=true;});
+$('#game').addEventListener('webglcontextlost',e=>{e.preventDefault();if(sim.status==='playing')togglePause();showToast('Graphics interrupted. Waiting for the street to return…');});
+$('#game').addEventListener('webglcontextrestored',()=>{renderDirty=true;showToast('Graphics restored. You can keep riding.');});
+function frame(now:number){const dt=Math.min((now-last)/1000,.05);last=now;
+ if(nudgeUntil&&now>nudgeUntil){desired=0;nudgeUntil=0;}
+ const keyboard=(keys.has('ArrowRight')||keys.has('d')?1:0)-(keys.has('ArrowLeft')||keys.has('a')?1:0);
+ steer+=((keyboard||desired)-steer)*(1-Math.exp(-dt*17));
+ accumulator+=dt;while(accumulator>=1/60){sim.update(1/60,{steer,brake:brake||keys.has('ArrowDown')||keys.has('s')||keys.has(' ')});accumulator-=1/60;}
+ const rear=sim.rearThreats.reduce<typeof sim.rearThreats[number]|undefined>((closest,t)=>!closest||t.timeToContact<closest.timeToContact?t:closest,undefined);
+ audio.update(sim.speed,VEHICLES[selected].id,sim.status==='playing',{neighborhood:sim.neighborhood,intensity:.5+lesson*.22,rear:rear?{kind:rear.kind,urgency:rear.urgency,x:rear.x}:undefined,traffic:sim.traffic,playerZ:sim.z});
+ if(sim.status==='playing'&&sim.neighborhood!==lastDistrict){lastDistrict=sim.neighborhood;announceDistrict();}
+ if(now>districtUntil||rear)$('#district-banner').classList.remove('visible');
+ $('#rear-alert').classList.toggle('hidden',!rear||sim.status!=='playing');
+ if(rear){$('#rear-title').textContent=`${rear.kind==='bus'?'BUS':'TRUCK'} BEHIND!`;$('#rear-alert').style.setProperty('--urgency',String(rear.urgency));$('#rear-vehicle').style.left=`${Math.max(8,Math.min(92,(rear.x+5.3)/10.6*100))}%`;$('#rear-player').style.left=`${(sim.x+5.3)/10.6*100}%`;}
+ if(sim.status==='playing'&&sim.elapsed>nextVendor){nextVendor+=18;if(now>toastUntil&&!rear){const localCall=sim.neighborhood==='riverfront'?['সদরঘাট! লঞ্চ ছাড়বে!','সদরঘাট! · The launch is leaving!']:sim.neighborhood==='boulevard'?['তাজা সবজি!','তাজা সবজি! · Fresh vegetables!']:['এই, চা! গরম চা! এক কাপ নিয়ে যান!','চা! গরম চা! · Hot tea, fresh from the kettle.'];audio.say(localCall[0]);showToast(localCall[1]);}}
+ const events=sim.events.splice(0);
+ for(const event of events){
+  if(event.type==='horn'){hornUntil=now+250;$('#horn').classList.add('ringing');audio.horn(VEHICLES[selected].id);if(!rear)showToast(event.text);}
+  if(event.type==='warning'){showToast(event.text);if(event.text.includes('Ostad'))audio.say('ওস্তাদ, বামে প্লাস্টিক!');if(/cow|goru/i.test(event.text))audio.warning('cow',(event.x??0)/5.3);}
+  if(event.type==='rear-warning'){audio.warning('rear',(event.x??0)/5.3);showToast(event.text,true);}
+  if(event.type==='paan-warning'){audio.warning('paan',(event.x??0)/5.3);showToast(event.text,true);}
+  if(event.type==='crash'){lastFailure=event.text;if(/paan/i.test(event.text)){splashUntil=now+1900;$('#paan-splash').classList.add('splashed');}audio.impact();audio.say('আস্তে ভাই, একটু জায়গা দেন!');showToast(event.text,true);$('#impact').classList.add('hit');feedbackUntil=now+260;}
+  if(event.type==='near-miss'){audio.nearMiss(sim.combo);$('#combo').innerHTML=`<small>বাঁচলাম!</small>${event.text}`;$('#combo').classList.add('visible','close-shave');comboUntil=now+1500;}
+  if(event.type==='pass'&&now>comboUntil){$('#combo').textContent=event.text;$('#combo').classList.remove('close-shave');$('#combo').classList.add('visible');comboUntil=now+900;}
+  if(event.type==='win'||event.type==='lose'){if(event.type==='lose')lastFailure=event.text;finish();}
+ }
+ if(now>comboUntil)$('#combo').classList.remove('visible');if(now>splashUntil)$('#paan-splash').classList.remove('splashed');if(now>hornUntil)$('#horn').classList.remove('ringing');
+ if(now>toastUntil)$('#toast').classList.remove('shown');if(now>feedbackUntil)$('#impact').classList.remove('hit');
+ $('#speed').textContent=String(Math.round(sim.speed*3.6));$('#score').textContent=String(sim.score).padStart(4,'0');$('#remaining').textContent=`${Math.ceil(sim.remaining)} m to destination`;$('#progress').style.width=`${100*(1-sim.remaining/sim.routeLength)}%`;
+ $('#mission-goal').textContent=`Gold: 3♥ · ${sim.nearMisses}/${sim.stage.nearMissTarget} close shaves · ${Math.floor(sim.elapsed)}/${sim.stage.parTime}s`;
+ $('#hearts').textContent=Array.from({length:3},(_,i)=>i<sim.health?'●':'○').join(' ');$('#hearts').setAttribute('aria-label',`${sim.health} composure remaining`);$('#horn').style.setProperty('--cooldown',String(sim.hornCooldown>0?.55:1));$('#tutorial').classList.toggle('hidden',sim.elapsed>9||screen!=='playing');
+ if(screen==='playing'&&(sim.status==='playing'||renderDirty||renderedSimulation!==sim||renderedStatus!==sim.status)){world?.render(sim,dt,steer);renderDirty=false;renderedSimulation=sim;renderedStatus=sim.status;}
+ if(reviewMode&&world)$('#review-stats').textContent=JSON.stringify({...world.getStats(),status:sim.status,vehicle:VEHICLES[sim.vehicleIndex].id,stage:sim.stage.id,neighborhood:sim.neighborhood,nearMisses:sim.nearMisses,rearThreats:sim.rearThreats.length,projectiles:sim.projectiles.length,distance:Math.round(sim.distance),health:sim.health,x:Number(sim.x.toFixed(2)),speed:Number(sim.speed.toFixed(2)),activeActors:world.actors.size});
+ requestAnimationFrame(frame);
+}
+if(reviewMode){
+ const review=document.createElement('details');review.id='review-tools';review.innerHTML='<summary>Review scenes</summary><div id="review-scenes"></div><output id="review-stats"></output>';document.body.append(review);
+ const scenes=[['Bicycle',0,0,0],['Rickshaw',1,0,0],['Motorbike',2,0,0],['Car',3,0,0],['Truck',4,0,0],['Bazaar',0,0,0],['Riverfront',0,0,230],['Boulevard',0,0,440],['Hard bicycle',0,2,0]] as const;
+ for(const [name,index,mission,distance] of scenes){const b=document.createElement('button');b.textContent=name;b.onclick=()=>{selected=index;lesson=mission;void start();sim.distance=distance;sim.z=-distance;sim.remaining=sim.routeLength-distance;sim.speed=VEHICLES[index].maxSpeed;sim.elapsed=distance/13;sim.pause();lastDistrict=sim.neighborhood;announceDistrict();toastUntil=districtUntil=0;$('#toast').classList.remove('shown');$('#district-banner').classList.remove('visible');};$('#review-scenes').append(b);}
+ for(const name of ['Cow encounter','Broken road','Paan encounter','Paan flight','Rear bus encounter']){const b=document.createElement('button');b.textContent=name;b.onclick=()=>{selected=0;lesson=1;void start();sim.traffic=[];sim.speed=8;if(name==='Cow encounter')sim.traffic.push({id:9001,kind:'cow',x:1.2,z:-8,speed:0,width:1.7,length:2.4,passed:false,warn:false});if(name==='Broken road')sim.traffic.push({id:9010,kind:'pothole',x:-.8,z:-8,speed:0,width:2,length:2.3,passed:false,warn:false});if(name==='Paan encounter'||name==='Paan flight'){sim.traffic.push({id:9003,kind:'pedestrian',behavior:'paan-thrower',x:5.75,z:-11,speed:0,width:.65,length:.65,passed:false,warn:true});}if(name==='Paan encounter'||name==='Paan flight')sim.projectiles.push({id:9002,sourceId:9003,phase:name==='Paan flight'?'flying':'telegraph',sourceX:5.8,sourceZ:-11,targetX:0,targetZ:-11,x:name==='Paan flight'?2.5:5.8,y:1.4,z:-11,radius:.8,progress:name==='Paan flight'?.5:0,remaining:2});if(name==='Rear bus encounter'){sim.traffic.push({id:9004,kind:'bus',x:0,z:30,speed:18,width:2.4,length:6.5,passed:false,warn:true,behavior:'rear-threat',phase:'warning',warningRemaining:3});sim.rearThreats.push({actorId:9004,kind:'bus',x:0,z:30,urgency:.4,timeToContact:3,warningRemaining:3,phase:'warning'});}sim.pause();toastUntil=districtUntil=0;$('#toast').classList.remove('shown');$('#district-banner').classList.remove('visible');};$('#review-scenes').append(b);}
+ for(const outcome of ['won','lost'] as const){const b=document.createElement('button');b.textContent=`Test ${outcome}`;b.onclick=()=>{if(screen!=='playing')void start();sim.status=outcome;sim.stars=outcome==='won'?2:0;sim.speed=0;ending=false;finish();};$('#review-scenes').append(b);}
+}
+drawGarage();updateSound();requestAnimationFrame(()=>{
+ try{world=new World($('#game'));world.setQuality(save.quality);world.setReduced(save.reduced);requestAnimationFrame(frame);}
+ catch(error){console.error(error);$('#start').setAttribute('disabled','');$('.intro').textContent='This browser could not start 3D graphics. Try opening the game in Safari or Chrome with WebGL2 enabled.';$('#start').textContent='3D graphics unavailable';}
+});

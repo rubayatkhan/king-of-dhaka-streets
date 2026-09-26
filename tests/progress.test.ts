@@ -1,0 +1,10 @@
+import {describe,it,expect} from 'vitest';
+import {loadProgress,completeStage,availableStage} from '../src/progress';
+describe('mission progression',()=>{
+ it('requires three distinct bicycle completions before rickshaw',()=>{const p=loadProgress(null,null);completeStage(p,0,100,1);completeStage(p,0,200,3);expect(availableStage(p)).toBe(1);completeStage(p,1,100,1);expect(availableStage(p)).toBe(2);completeStage(p,2,100,1);expect(availableStage(p)).toBe(3);});
+ it('rejects skipping locked missions and losing does not progress',()=>{const p=loadProgress(null,null);completeStage(p,5,9000,3);completeStage(p,0,90,0);expect(availableStage(p)).toBe(0);expect(p.stars.every(n=>n===0)).toBe(true);});
+ it('preserves best medals and scores independently on replay',()=>{const p=loadProgress(null,null);completeStage(p,0,100,3);completeStage(p,0,150,1);expect(p.best[0]).toBe(150);expect(p.stars[0]).toBe(3);});
+ it('migrates earned vehicles without pretending the next chapter is completed',()=>{const p=loadProgress(null,JSON.stringify({unlocked:2,best:[100,200],muted:true,quality:'low'}));expect(availableStage(p)).toBe(6);expect(p.stars.slice(0,6)).toEqual([1,1,1,1,1,1]);expect(p.stars[6]).toBe(0);expect(p.best[5]).toBe(200);expect(p.muted).toBe(true);});
+ it('round trips all fifteen missions and caps the final selection',()=>{const p=loadProgress(null,null);for(let i=0;i<15;i++)completeStage(p,i,50,2);const q=loadProgress(JSON.stringify(p),null);expect(availableStage(q)).toBe(14);expect(q.stars).toEqual(Array(15).fill(2));});
+ it('sanitizes corrupt preferences, arrays and nonfinite score values',()=>{const p=loadProgress(JSON.stringify({stars:[9,-2,'3',1],best:[null,-7,'8'],quality:'broken'}),null);expect(p.stars.slice(0,4)).toEqual([3,0,0,1]);expect(p.best.slice(0,3)).toEqual([0,0,0]);expect(availableStage(p)).toBe(1);expect(p.quality).toBe('auto');expect(loadProgress('{',null).stars).toHaveLength(15);});
+});
