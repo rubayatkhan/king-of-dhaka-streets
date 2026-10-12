@@ -332,6 +332,16 @@ it('taps the jhalmuri tin every 0.9 s while the magnet lasts', async () => {
   const after = squares(); context.currentTime = 3; audio.update(10, 'bicycle', true, street(0)); expect(squares()).toBe(after);
 });
 
+it('auditions any bank sound outside a ride for the dev sound check, but never while muted', async () => {
+  const audio = await initialized();
+  const before = context.sources.length + context.createOscillator.mock.calls.length;
+  audio.audition('conch-saw');
+  expect(context.sources.length + context.createOscillator.mock.calls.length).toBeGreaterThan(before);
+  audio.setMuted(true); const muted = context.sources.length + context.createOscillator.mock.calls.length;
+  audio.audition('crow');
+  expect(context.sources.length + context.createOscillator.mock.calls.length).toBe(muted);
+});
+
 it('previews a horn in the Bazaar outside a ride, but never while muted', async () => {
   const audio = await initialized();
   const before = context.createOscillator.mock.calls.length;

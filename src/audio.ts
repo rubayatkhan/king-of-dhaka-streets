@@ -1,5 +1,5 @@
 /** CC0 street ambience, original effects, and street calls: the family's recording, else a bundled AI voice, else a caption. */
-import { DEFAULT_HORN, HORNS, JUMP_SOUND, SOUNDS, coinRecipe, transpose, type HornId, type Note, type Recipe, type ToneNote } from './soundbank';
+import { DEFAULT_HORN, HORNS, JUMP_SOUND, SOUNDS, coinRecipe, transpose, type HornId, type Note, type Recipe, type SoundId, type ToneNote } from './soundbank';
 import type { VehicleKind } from './simulation';
 import { asDistrict, streetCue, type Cue } from './soundscape';
 import { MEDAL, type MusicState } from './music';
@@ -289,6 +289,11 @@ export class GameAudio {
     if (!this.context || this.muted || this.context.state !== 'running' || this.context.currentTime - this.lastPreview < 0.32) return;
     this.lastPreview = this.context.currentTime;
     this.play(HORNS[horn]);
+  }
+
+  /** Plays one bank sound outside a ride, for the dev-only sound check. */
+  audition(id: SoundId): void {
+    if (this.context && !this.muted && this.context.state === 'running') this.play(SOUNDS[id]);
   }
 
   impact(): void {

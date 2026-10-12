@@ -12,6 +12,7 @@ import { freshSeed } from './seed';
 import { SwipeRecognizer } from './controls';
 import { heartsLabel, raceBar, shavesChip } from './hud';
 import { districtCall, passCue } from './soundscape';
+import { SOUNDS, type SoundId } from './soundbank';
 
 const $=<T extends HTMLElement=HTMLElement>(s:string)=>document.querySelector<T>(s)!;
 const crown='<svg viewBox="0 0 32 28" fill="none"><path d="m3 7 6 6L16 3l7 10 6-6-4 17H7L3 7Z" stroke="currentColor" stroke-width="2"/><path d="M8 20h16" stroke="currentColor" stroke-width="2"/></svg>';
@@ -254,6 +255,8 @@ if(reviewMode){
  for(const [name,index,mission,distance,elapsed,health,shaves] of hudScenes){const b=document.createElement('button');b.textContent=name;b.onclick=()=>{selected=index;lesson=mission;void start();sim.distance=distance;sim.z=-distance;sim.remaining=sim.routeLength-distance;sim.speed=VEHICLES[index].maxSpeed*.8;sim.elapsed=elapsed;sim.health=health;sim.nearMisses=shaves;sim.score=1240;sim.taka=86;lastDistrict=sim.neighborhood;$('#district-name').textContent=districts[sim.neighborhood].name;sim.pause();districtUntil=0;$('#district-banner').classList.remove('visible');toastUntil=0;$('#toast').classList.remove('shown');
   if(name.includes('toast')){toastPriority=0;showToast('এই, চা! গরম চা! · Hot tea, fresh from the kettle.');toastUntil=performance.now()+6e5;$('#combo').innerHTML='<small>বাঁচলাম!</small>Close shave ×2';$('#combo').classList.add('visible','close-shave');comboUntil=performance.now()+6e5;Object.assign(sim.effects,{boost:3.4,magnet:5.6});}
   if(name.startsWith('Rear')){sim.traffic.push({id:9004,kind:'bus',x:0,z:30,speed:18,width:2.4,length:6.5,passed:false,warn:true,behavior:'rear-threat',phase:'warning',warningRemaining:3});sim.rearThreats.push({actorId:9004,kind:'bus',x:0,z:30,urgency:.6,timeToContact:3,warningRemaining:3,phase:'warning'});toastPriority=0;showToast('Bus behind! Move out of its lane.',true);toastUntil=performance.now()+6e5;sim.resume();}};$('#review-scenes').append(b);}
+ // Dev-only sound check: play each bank sound by itself to judge it by ear.
+ const check=document.createElement('details');check.innerHTML='<summary>Sound check</summary>';for(const id of Object.keys(SOUNDS) as SoundId[]){const b=document.createElement('button');b.textContent=id;b.onclick=()=>{void audio.init().then(()=>audio.audition(id));};check.append(b);}$('#review-tools').append(check);
  for(const outcome of ['won','lost'] as const){const b=document.createElement('button');b.textContent=`Test ${outcome}`;b.onclick=()=>{if(screen!=='playing')void start();sim.status=outcome;sim.stars=outcome==='won'?2:0;sim.speed=0;ending=false;finish();};$('#review-scenes').append(b);}
 }
 drawGarage();updateSound();requestAnimationFrame(()=>{
