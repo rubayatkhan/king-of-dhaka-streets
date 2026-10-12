@@ -106,7 +106,7 @@ export function tickEffects(e: Effects, dt: number, rearThreat: boolean): boolea
   return true;
 }
 
-export interface PlacementInput { traffic: Traffic[]; routeLength: number; startSpeed: number; arcHeight: number; arcClears: string[]; random: () => number }
+export interface PlacementInput { traffic: Traffic[]; routeLength: number; startSpeed: number; arcHeight: number; arcClears: string[]; random: () => number; ambushes?: number }
 export const COIN_SPACING = 1.2, MAX_SNACKS = 4, SNACK_GAP = 120;
 const SAFE_LANES = [-3.2, -1.6, 0, 1.6, 3.2], SNACK_LANES = [-2.4, 0, 2.4];
 const SNACKS: PowerUp[] = ['cha', 'jhalmuri', 'chaap'];
@@ -143,13 +143,19 @@ export function placePickups(input: PlacementInput): { coins: Coin[]; snacks: Sn
     });
   }
 
+  // The first `ambushes` paan-throwers lob at the rider's lane, so no safe trail leads through their zone.
+  const ambushZs = traffic.filter(t => t.behavior === 'paan-thrower').map(t => t.z).sort((a, b) => b - a).slice(0, input.ambushes ?? 0);
+
   // Safe trails teach a clean line through the traffic.
   for (let start = 70 + random() * 30; start < routeLength - 50; start += 70 + random() * 40) {
     const count = 6 + Math.floor(random() * 7), first = Math.floor(random() * SAFE_LANES.length);
     for (let j = 0; j < SAFE_LANES.length; j++) {
       const x = SAFE_LANES[(first + j) % SAFE_LANES.length];
       const zs = Array.from({ length: count }, (_, k) => -(start + k * COIN_SPACING));
-      if (!zs.every(z => inRoute(z) && clear(x, z) && free(x, z))) continue;
+      if (ambushZs.some(tz => zs[0] > tz - 40 && zs[zs.length - 1] < tz + 45)) continue;
+      // The lane must also be open for the approach (6 m before) and the run-out (12 m after), or a rider gives the trail up.
+      const reach = [zs[0] + 6, ...zs, zs[zs.length - 1] - 12];
+      if (!zs.every(z => inRoute(z) && free(x, z)) || !reach.every(z => clear(x, z))) continue;
       lay(x, zs, 1, 'safe');
       break;
     }
