@@ -1,7 +1,7 @@
 export const FEEDBACK_ENDPOINT='https://api.web3forms.com/submit';
 export type FeedbackKind='idea'|'bug'|'love';
 export interface FeedbackInput{name:string;kind:FeedbackKind;message:string;botcheck:string}
-export interface FeedbackContext{vehicle:string;mission:string;progress:string;device:string}
+export interface FeedbackContext{vehicle:string;mission:string;progress:string;device:string;purchases:string}
 export type FeedbackResult={ok:true}|{ok:false;reason:string};
 export const FEEDBACK_KINDS:Record<FeedbackKind,string>={idea:'New idea',bug:'Something broken',love:'Something I love'};
 const MAX_MESSAGE=2000,MAX_NAME=40;

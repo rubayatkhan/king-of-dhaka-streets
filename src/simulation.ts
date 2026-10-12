@@ -1,4 +1,5 @@
 import { getStage, NEIGHBORHOODS, SPEED_CAP, type Neighborhood, type StageProfile } from './campaign';
+import { BASE_POWER_UPS, CHA_SPEED, COIN_HEIGHT, SNACK_TEXT, STOMACH_SPEED, eatSnack, newEffects, placePickups, tickEffects, type Coin, type Effects, type PowerUpStats, type Snack } from './pickups';
 export type VehicleKind = 'bicycle' | 'rickshaw' | 'motorbike' | 'car' | 'truck';
 export interface VehicleProfile {
   id: VehicleKind; name: string; bangla: string; tagline: string;
@@ -22,6 +23,9 @@ export const JUMPS: Record<VehicleKind, JumpProfile> = {
   truck: { airtime: 0.3, height: 0.15, clears: ['pothole'] },
 };
 const JUMP_COOLDOWN = 0.35, AIR_STEERING = 0.6;
+const COIN_SCAN_AHEAD = 40;
+// A warned bus or truck starts 36 m behind and closes at least this fast, so no pace (not even cha) outruns it.
+const REAR_START = 36, REAR_CLOSING = 12, REAR_WARNING = 3;
 export type Traffic = {
   id: number; kind: VehicleKind | 'bus' | 'cng' | 'pedestrian' | 'pothole' | 'paan' | 'cow';
   x: number; z: number; speed: number; width: number; length: number; passed: boolean; warn: boolean;
@@ -36,7 +40,7 @@ export interface Projectile {
   sourceX: number; sourceZ: number; targetX: number; targetZ: number;
   x: number; y: number; z: number; radius: number; progress: number; remaining: number;
 }
-export interface GameEvent { type: string; text: string; x?: number; z?: number; actorId?: number; priority?: 'normal' | 'urgent' }
+export interface GameEvent { type: string; text: string; x?: number; z?: number; actorId?: number; priority?: 'normal' | 'urgent'; value?: number; chain?: number; kind?: string }
 export interface Input { steer: number; brake: boolean }
 export const ROAD_HALF_WIDTH = 5.3;
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
@@ -52,6 +56,9 @@ export class Simulation {
   readonly stage: StageProfile; readonly stageIndex: 0 | 1 | 2;
   invulnerable = 0; hornCooldown = 0;
   y = 0; airTime = -1; jumpCooldown = 0;
+  coins: Coin[] = []; snacks: Snack[] = []; effects: Effects = newEffects(); taka = 0; banked = false;
+  readonly powerUps: PowerUpStats;
+  private coinChain = 0; private lastCoinAt = -10;
   readonly routeLength: number;
   private rng: number;
   private yielding = new Map<number, { x: number; until: number }>();
@@ -66,15 +73,18 @@ export class Simulation {
   private paanEncounters = 0;
   private nextReactiveTime = 0;
   private chainUntil = 0;
-  private rearDelays = new Map<number, number>();
 
-  constructor(index = 0, seed = 1, stageIndex = 0) {
+  constructor(index = 0, seed = 1, stageIndex = 0, powerUps: PowerUpStats = BASE_POWER_UPS) {
     this.vehicleIndex = Number.isFinite(index) ? clamp(Math.floor(index), 0, VEHICLES.length - 1) : 0;
     this.stage = getStage(this.vehicleIndex, stageIndex); this.stageIndex = this.stage.lessonIndex;
     this.rng = ((seed + this.stage.id * 7919) >>> 0) || 1;
     this.routeLength = this.stage.routeLength;
     this.remaining = this.routeLength;
+    this.powerUps = powerUps;
     this.createTraffic();
+    const jump = JUMPS[VEHICLES[this.vehicleIndex].id];
+    ({ coins: this.coins, snacks: this.snacks } = placePickups({ traffic: this.traffic, routeLength: this.routeLength, startSpeed: this.maxSpeed, ambushes: this.stageIndex,
+      riderHalfWidth: VEHICLES[this.vehicleIndex].width / 2, riderLength: VEHICLES[this.vehicleIndex].length, arcHeight: jump.height, arcClears: jump.clears.filter(kind => kind !== 'splash'), random: () => this.random() }));
   }
   neighborhoodAt(distance: number): Neighborhood {
     const zone = Math.floor(Math.max(0, Number.isFinite(distance) ? distance : 0) / 210);
@@ -88,6 +98,46 @@ export class Simulation {
     return Math.min(SPEED_CAP, start * (1 + (this.stage.finishBoost - 1) * progress));
   }
   get airborne(): boolean { return this.airTime >= 0; }
+  get repMultiplier(): number { return this.effects.boost > 0 ? 2 : 1; }
+  /** How far the jhalmuri magnet reaches: its pull radius, measured from the rider's collecting edge. */
+  get magnetReach(): number { return this.powerUps.magnetRadius + VEHICLES[this.vehicleIndex].width / 2 + 0.45; }
+
+  // Chaap's full belly soaks up one ordinary hit: no heart lost.
+  private absorbHit(id: number, x: number, z: number): boolean {
+    if (!this.effects.belly) return false;
+    this.effects.belly = false; this.hit.add(id); this.invulnerable = 2; this.speed *= 0.6; this.combo = 0;
+    this.events.push({ type: 'belly', text: 'Full belly! Bounced right off.', x, z, actorId: id });
+    return true;
+  }
+
+  private updatePickups(dt: number): void {
+    const vehicle = VEHICLES[this.vehicleIndex];
+    if (tickEffects(this.effects, dt, this.rearThreats.length > 0)) this.events.push({ type: 'stomach', text: 'পেট গুড়গুড়! Tummy trouble — hold steady.', x: this.x, z: this.z, priority: 'urgent' });
+    const reachX = vehicle.width / 2 + 0.45, reachZ = vehicle.length / 2 + 0.3;
+    for (const coin of this.coins) {
+      if (coin.collected) continue;
+      const ahead = this.z - coin.z;
+      if (ahead < -reachZ - 2 || ahead > COIN_SCAN_AHEAD) continue;
+      if (this.effects.magnet > 0 && coin.trail !== 'arc') {
+        const gap = Math.hypot(coin.x - this.x, ahead);
+        if (gap > 1e-6 && gap < this.magnetReach) {
+          const pull = Math.min(1, 14 * dt / gap);
+          coin.x += (this.x - coin.x) * pull; coin.z += (this.z - coin.z) * pull; coin.y += (COIN_HEIGHT + this.y - coin.y) * pull;
+        }
+      }
+      if (Math.abs(coin.x - this.x) < reachX && Math.abs(this.z - coin.z) < reachZ && coin.y - COIN_HEIGHT <= this.y + 0.25 && (coin.trail !== 'arc' || this.airborne)) {
+        coin.collected = true; this.taka += coin.value;
+        this.coinChain = this.elapsed - this.lastCoinAt <= 0.6 ? this.coinChain + 1 : 1; this.lastCoinAt = this.elapsed;
+        this.events.push({ type: 'coin', text: `৳${coin.value}`, x: coin.x, z: coin.z, value: coin.value, chain: this.coinChain });
+      }
+    }
+    for (const snack of this.snacks) {
+      if (snack.eaten || Math.abs(snack.x - this.x) >= vehicle.width / 2 + 0.5 || Math.abs(this.z - snack.z) >= vehicle.length / 2 + 0.4) continue;
+      snack.eaten = true;
+      eatSnack(this.effects, snack.kind, this.powerUps, this.random());
+      this.events.push({ type: 'snack', text: SNACK_TEXT[snack.kind], kind: snack.kind, x: snack.x, z: snack.z });
+    }
+  }
 
   jump(): boolean {
     if (this.status !== 'playing' || this.airborne || this.jumpCooldown > 0) return false;
@@ -203,10 +253,12 @@ export class Simulation {
     this.hornCooldown = Math.max(0, this.hornCooldown - dt);
     this.updateJump(dt);
     if (this.elapsed > this.chainUntil) this.combo = 0;
-    const targetSpeed = input.brake ? 1.4 : this.maxSpeed;
+    const pace = Math.min(SPEED_CAP, this.maxSpeed * (this.effects.boost > 0 ? CHA_SPEED : 1)) * (this.effects.stomach > 0 ? STOMACH_SPEED : 1);
+    const targetSpeed = input.brake ? 1.4 : pace;
     const response = input.brake ? 3.5 : 1.05;
     this.speed += (targetSpeed - this.speed) * (1 - Math.exp(-response * dt));
-    const steer = (Number.isFinite(input.steer) ? clamp(input.steer, -1, 1) : 0) * (this.airborne ? AIR_STEERING : 1);
+    const wobble = this.effects.stomach > 0 ? Math.sin(this.elapsed * 7) * 0.35 : 0;
+    const steer = clamp((Number.isFinite(input.steer) ? clamp(input.steer, -1, 1) : 0) + wobble, -1, 1) * (this.airborne ? AIR_STEERING : 1);
     this.x = clamp(this.x + steer * vehicle.steering * (0.45 + 0.55 * this.speed / this.maxSpeed) * dt,
       -ROAD_HALF_WIDTH + vehicle.width / 2, ROAD_HALF_WIDTH - vehicle.width / 2);
     this.distance = Math.min(this.routeLength, this.distance + this.speed * dt);
@@ -215,6 +267,7 @@ export class Simulation {
     this.updateRearThreats(dt);
     this.updateProjectiles(dt);
     if (this.status !== 'playing') return;
+    this.updatePickups(dt);
 
     for (const actor of this.traffic) {
       if (actor.behavior === 'rear-threat') continue;
@@ -259,6 +312,7 @@ export class Simulation {
       if (overlapX && overlapZ && !this.hit.has(actor.id) && this.clears(actor.kind)) this.cleared.add(actor.id);
       const contact = overlapX && overlapZ && !this.cleared.has(actor.id);
       if (contact) { this.contacted.add(actor.id); this.combo = 0; }
+      if (contact && this.invulnerable <= 0 && !this.hit.has(actor.id) && this.absorbHit(actor.id, actor.x, actor.z)) continue;
       if (contact && this.invulnerable <= 0 && !this.hit.has(actor.id)) {
         this.hit.add(actor.id);
         this.health = Math.max(0, this.health - 1);
@@ -283,9 +337,9 @@ export class Simulation {
           const close = gap > 0 && gap < 0.9;
           if (close) {
             this.nearMisses++; this.combo = Math.min(9, this.combo + 1); this.maxCombo = Math.max(this.maxCombo, this.combo); this.chainUntil = this.elapsed + 5;
-            this.score += 35 * this.combo;
+            this.score += 35 * this.combo * this.repMultiplier;
             this.events.push({ type: 'near-miss', text: `Close shave! ×${this.combo}`, x: actor.x, z: actor.z, actorId: actor.id });
-          } else { this.score += 15; this.events.push({ type: 'pass', text: 'Clean pass', x: actor.x, z: actor.z, actorId: actor.id }); }
+          } else { this.score += 15 * this.repMultiplier; this.events.push({ type: 'pass', text: 'Clean pass', x: actor.x, z: actor.z, actorId: actor.id }); }
         }
       }
     }
@@ -326,7 +380,7 @@ export class Simulation {
       }
       if (p.phase === 'splash' && !this.clears('splash') && Math.abs(this.x - p.x) < vehicle.width / 2 + p.radius && Math.abs(this.z - p.z) < vehicle.length / 2 + p.radius) {
         this.contacted.add(p.id); this.combo = 0;
-        if (this.invulnerable <= 0 && !this.hit.has(p.id)) {
+        if (this.invulnerable <= 0 && !this.hit.has(p.id) && !this.absorbHit(p.id, p.x, p.z)) {
           this.hit.add(p.id); this.health = Math.max(0, this.health - 1); this.speed *= 0.4; this.invulnerable = 2;
           this.events.push({ type: 'crash', text: 'Paan ambush! Shake it off.', x: p.x, z: p.z, actorId: p.sourceId, priority: 'urgent' });
           if (this.health === 0) { this.status = 'lost'; this.speed = 0; this.events.push({ type: 'lose', text: 'A tough street. One more try?' }); }
@@ -363,18 +417,34 @@ export class Simulation {
     });
   }
 
+  private inRearLane(threat: RearThreat, margin: number): boolean {
+    return Math.abs(this.x - threat.x) < (VEHICLES[this.vehicleIndex].width + (threat.kind === 'bus' ? 2.4 : 2.5)) / 2 + margin;
+  }
+
+  // The lane well clear of the rider that cuts through the least traffic, preferring the farther one.
+  private swerveLane(threat: RearThreat): number {
+    const threatWidth = threat.kind === 'bus' ? 2.4 : 2.5, edge = ROAD_HALF_WIDTH - threatWidth / 2 - 0.1;
+    const lanes = Array.from({ length: Math.floor(edge * 8) + 1 }, (_, k) => -edge + k * 0.25).filter(x => x <= edge && !this.inRearLane({ ...threat, x }, 0.6));
+    const crowd = (x: number) => this.traffic.filter(t => t.behavior !== 'rear-threat' && t.behavior !== 'paan-thrower' && !t.passed &&
+      Math.abs(t.z - this.z) < 40 && Math.abs(t.x - x) < (t.width + threatWidth) / 2).length;
+    const far = this.x > 0 ? -edge : edge;
+    return lanes.reduce((best, x) => crowd(x) < crowd(best) || (crowd(x) === crowd(best) && Math.abs(x - this.x) > Math.abs(best - this.x)) ? x : best, lanes[0] ?? far);
+  }
+
   private updateRearThreats(dt: number): void {
     const vehicle = VEHICLES[this.vehicleIndex];
     const encounterCount = this.stageIndex === 0 ? 0 : this.stageIndex === 1 ? 1 : 2;
-    if (this.elapsed >= this.nextReactiveTime && this.rearEncounters < encounterCount && this.distance >= 180 + this.rearEncounters * 280 && this.remaining > 140 && this.rearThreats.length === 0 && this.projectiles.length === 0) {
+    // Only announce one with road left for the warning, its approach and a second to pass, even at cha pace.
+    const runway = (REAR_WARNING + REAR_START / REAR_CLOSING + 1) * Math.min(SPEED_CAP, Math.max(this.speed, this.maxSpeed) * CHA_SPEED);
+    if (this.elapsed >= this.nextReactiveTime && this.rearEncounters < encounterCount && this.distance >= 180 + this.rearEncounters * 280 && this.remaining > runway && this.rearThreats.length === 0 && this.projectiles.length === 0) {
       const kind = this.vehicleIndex < 2 ? 'bus' : 'truck';
-      const actorId = this.encounterId, x = clamp(this.x, -2, 2), z = this.z + 36;
-      const candidate: RearThreat = { actorId, kind, x, z, warningRemaining: 3 + dt, timeToContact: 7, urgency: 0, phase: 'warning' };
+      const actorId = this.encounterId, x = clamp(this.x, -2, 2), z = this.z + REAR_START;
+      const candidate: RearThreat = { actorId, kind, x, z, warningRemaining: REAR_WARNING + dt, timeToContact: 7, urgency: 0, phase: 'warning' };
       if (this.escapeExists(candidate)) {
       this.rearEncounters++; this.encounterId++;
       this.rearThreats.push(candidate);
       this.traffic.push({ id: actorId, kind, x, z, speed: this.maxSpeed + 9, width: kind === 'bus' ? 2.4 : 2.5, length: 6.5,
-        passed: false, warn: true, behavior: 'rear-threat', phase: 'warning', warningRemaining: 3 });
+        passed: false, warn: true, behavior: 'rear-threat', phase: 'warning', warningRemaining: REAR_WARNING });
       this.events.push({ type: 'rear-warning', text: kind === 'bus' ? 'Bus behind! Move out of the marked lane.' : 'Truck behind! Clear its lane.', x, z, actorId, priority: 'urgent' });
       }
     }
@@ -384,19 +454,17 @@ export class Simulation {
       if (!actor) { done.add(threat.actorId); continue; }
       if (threat.phase === 'warning') {
         threat.warningRemaining = Math.max(0, threat.warningRemaining - dt);
-        threat.z = this.z + 36;
+        threat.z = this.z + REAR_START;
         if (threat.warningRemaining <= 1e-8) {
-          if (this.escapeExists(threat)) { threat.phase = 'passing'; actor.phase = 'active'; }
-          else {
-            const delay = (this.rearDelays.get(threat.actorId) ?? 0) + 0.25;
-            this.rearDelays.set(threat.actorId, delay);
-            if (delay >= 1.25) {
-              done.add(threat.actorId); actor.behavior = undefined; actor.phase = 'passed'; actor.passed = true; actor.speed = 1;
-              this.events.push({ type: 'warning', text: 'Heavy traffic has slowed behind you. Keep moving.', x: threat.x, z: threat.z, actorId: actor.id });
-            } else threat.warningRemaining = 0.25;
+          threat.phase = 'passing'; actor.phase = 'active';
+          // A rider boxed into the marked lane by traffic is never punished for a gap that does not exist.
+          if (this.inRearLane(threat, 0.4) && !this.escapeExists(threat)) {
+            threat.x = this.swerveLane(threat);
+            this.events.push({ type: 'rear-swerve', text: `The ${threat.kind} swerves around you!`, x: threat.x, z: threat.z, actorId: actor.id, priority: 'urgent' });
           }
         }
       } else {
+        actor.speed = Math.max(actor.speed, this.speed + REAR_CLOSING);
         threat.z -= actor.speed * dt;
         const overlap = Math.abs(this.x - threat.x) < (vehicle.width + actor.width) * 0.43 && Math.abs(this.z - threat.z) < (vehicle.length + actor.length) * 0.43;
         if (overlap) {
@@ -404,7 +472,7 @@ export class Simulation {
           this.events.push({ type: 'crash', text: 'Caught by the heavy traffic behind you!', x: threat.x, z: threat.z, actorId: actor.id, priority: 'urgent' });
           this.events.push({ type: 'lose', text: 'Listen for the rear warning and clear the marked lane.' });
         }
-        if (this.z - threat.z > 12) { done.add(threat.actorId); actor.behavior = undefined; actor.phase = 'passed'; actor.passed = true; this.score += 50; }
+        if (this.z - threat.z > 12) { done.add(threat.actorId); actor.behavior = undefined; actor.phase = 'passed'; actor.passed = true; this.score += 50 * this.repMultiplier; }
       }
       actor.x = threat.x; actor.z = threat.z; actor.warningRemaining = threat.warningRemaining;
       threat.timeToContact = Math.max(0, threat.z - this.z) / Math.max(1, actor.speed - this.speed) + threat.warningRemaining;

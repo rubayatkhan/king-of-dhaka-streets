@@ -261,6 +261,20 @@ describe('street audio lifecycle', () => {
     expect(afterWarning).toBeGreaterThanOrEqual(continuous);
     expect(context.createStereoPanner.mock.results.some(result => result.value.pan.setTargetAtTime.mock.calls.some((call: unknown[]) => Number(call[0]) > 0))).toBe(true);
   });
+
+  it('rings a rising coin chain and gives each snack, stomach and full belly its own sound', async () => {
+    const audio = await initialized();
+    audio.update(10, 'bicycle', true);
+    const count = () => context.createOscillator.mock.calls.length, freq = (n: number) => (context.createOscillator.mock.results[n].value as { frequency: { value: number } }).frequency.value;
+    let start = count(); audio.coin(1); expect(count() - start).toBe(1); const low = freq(start);
+    audio.coin(2); expect(count() - start).toBe(1);
+    context.currentTime = 1; start = count(); audio.coin(3); expect(count() - start).toBe(1); expect(freq(start)).toBeGreaterThan(low);
+    start = count(); audio.snack('cha'); expect(count() - start).toBe(2);
+    start = count(); audio.snack('jhalmuri'); expect(count() - start).toBe(4);
+    start = count(); audio.snack('chaap'); expect(count() - start).toBe(1);
+    start = count(); audio.stomach(); expect(count() - start).toBe(2);
+    start = count(); audio.belly(); expect(count() - start).toBe(1);
+  });
 });
 
  it('plays a terminal collision sting after the ride has become inactive',async()=>{const audio=await initialized();audio.update(5,'bicycle',true);audio.update(0,'bicycle',false);audio.resetRide();const before=context.createOscillator.mock.calls.length;audio.loss();expect(context.createOscillator.mock.calls.length).toBeGreaterThan(before);audio.resetRide();expect(context.createOscillator.mock.results.at(-1)!.value.stop).toHaveBeenCalled();});

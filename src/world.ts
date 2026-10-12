@@ -1,9 +1,12 @@
 import * as T from 'three';
-import {box,sphere,tube,material,canvasTexture,textured,mergeStatic,createVehicle,animateVehicle,pedestrian,type Model,disposeModel,seatedCow,roadHazard,animatePedestrian} from './models';
+import {box,sphere,tube,material,canvasTexture,textured,mergeStatic,createVehicle,coinParts,snackModel,type VehicleLook,animateVehicle,pedestrian,type Model,disposeModel,seatedCow,roadHazard,animatePedestrian} from './models';
 import {Simulation,VEHICLES} from './simulation';
-import {SHAKE_SECONDS,landingSquash,shakeOffset} from './feel';
+import {SHAKE_SECONDS,landingSquash,magnetOpacity,shakeOffset} from './feel';
+import {ChunkBender,pathX} from './bend';
 
-export const pathX=(z:number)=>Math.sin(z*.008)*5+Math.sin(z*.019)*1.8;
+export {pathX};
+// The player's Tata wears a tall painted crown, so its chase camera rides higher to keep the road ahead in view.
+const chaseHeight=(vehicle:number)=>vehicle===4?5.4:vehicle===3?4.8:3.2;
 const facades=[0xd99570,0xe8c28c,0xc98591,0x65aaa0,0xe0a48b,0xb5c7bb];
 const pennants=[0xe7704c,0x32a08d,0xf0bd51].map(color=>new T.MeshStandardMaterial({color,side:T.DoubleSide}));
 type Neighborhood='riverfront'|'bazaar'|'boulevard';
@@ -35,6 +38,10 @@ export class World {
  private signs=Array<T.MeshStandardMaterial>(shops.length).fill(signAtlas());private walls:T.MeshStandardMaterial[];
  private scenery:T.Group;private quality='auto';private scale=1;private frameAvg=16;private frames=0;
  private dust:T.Points;private reduced=false;private shakeRemaining=0;private shakeAmplitude=0;private sinceLanding=Infinity;
+ private coinMeshes:T.InstancedMesh[]=[];private snackModels=new Map<number,Model>();private dummy=new T.Object3D();private magnetField=new T.Group();private magnetRipples:T.Mesh[]=[];private streaks!:T.InstancedMesh;private haloMaterials=new Map<string,T.SpriteMaterial>();private haloTexture?:T.Texture;
+ // Each district's seven street blocks are built once (ahead of time when the garage is idle) and swapped in, never rebuilt mid-ride.
+ private pools:Record<Neighborhood,(T.Group|undefined)[]>={bazaar:[],riverfront:[],boulevard:[]};private bender=new ChunkBender();private lastRideFrame=-Infinity;private lastInput=-Infinity;private warmed=false;
+ private look:VehicleLook={};private lookKey='{}';private builtLookKey='';
  constructor(canvas:HTMLCanvasElement){
   this.renderer=new T.WebGLRenderer({canvas,antialias:true,powerPreference:'high-performance'});
   this.renderer.outputColorSpace=T.SRGBColorSpace;this.renderer.toneMapping=T.ACESFilmicToneMapping;this.renderer.toneMappingExposure=1.10;
@@ -45,12 +52,16 @@ export class World {
   this.riverMaterial.roughness=.46;
   this.scenery=new T.Group();this.scene.add(this.scenery);
   this.makeRoad();
-  for(let i=0;i<7;i++){const chunk=this.makeChunk(i,'bazaar');chunk.position.z=-i*48;this.chunks.push(chunk);this.scenery.add(chunk);}
+  this.coinMeshes=([1,5] as const).map(v=>{const p=coinParts(v);const m=new T.InstancedMesh(p.geometry,p.materials,256);m.count=0;m.frustumCulled=false;m.castShadow=true;this.scene.add(m);return m;});
+  this.makeMagnetField();this.makeStreaks();
+  for(let i=0;i<7;i++){const chunk=this.pooled(i,'bazaar');chunk.position.z=-i*48;this.chunks.push(chunk);this.scenery.add(chunk);}
   this.makePalace();this.scene.add(this.palace);
   this.player=createVehicle('bicycle');this.scene.add(this.player);
   const dustPos=[];for(let i=0;i<85;i++)dustPos.push((rand(i+801)-.5)*24,rand(i+802)*8, -rand(i+803)*65);
   const dg=new T.BufferGeometry();dg.setAttribute('position',new T.Float32BufferAttribute(dustPos,3));this.dust=new T.Points(dg,new T.PointsMaterial({color:0xffe7af,size:.06,transparent:true,opacity:.48,depthWrite:false}));this.scene.add(this.dust);
-  this.resize();
+  // A tap or key usually starts or resumes a ride, so warm-up keeps clear of fresh input as well as of riding.
+  for(const type of ['pointerdown','keydown'])addEventListener(type,()=>{this.lastInput=performance.now();},{capture:true,passive:true});
+  this.resize();this.scheduleWarmUp();
  }
  private makeRoad(){
   const road=new T.Group();const surface=canvasTexture(512,512,c=>{
@@ -74,6 +85,27 @@ export class World {
   const land=new T.Mesh(new T.PlaneGeometry(1200,4000),material(0x949b84));land.rotation.x=-Math.PI/2;land.position.y=-.09;this.scene.add(land);
   for(let i=0;i<220;i++){const z=20-i*7;box(road,pathX(z),.012,z,.09,.018,2.1,0xc9b991);for(const side of [-1,1]){const gutter=box(road,pathX(z)+side*5.65,.008,z,.7,.012,7.2,0x858775);gutter.rotation.y=Math.atan(.04*Math.cos(z*.008)+.0342*Math.cos(z*.019));}}
   mergeStatic(road);this.scene.add(road);
+ }
+ private pooled(slot:number,district:Neighborhood){return this.pools[district][slot]??=this.makeChunk(slot,district);}
+ // Builds one missing block per idle moment outside a ride, then compiles every shader the ride will need, so a
+ // district change or the first frame never stalls on building geometry or compiling programs.
+ private scheduleWarmUp(){
+  if(this.warmed)return;const later=(f:()=>void)=>'requestIdleCallback' in globalThis?requestIdleCallback(f,{timeout:1500}):setTimeout(f,400);
+  later(()=>{
+   const now=performance.now();if(now-this.lastRideFrame<1000||now-this.lastInput<1500){setTimeout(()=>this.scheduleWarmUp(),1000);return;}
+   const missing=(['riverfront','boulevard','bazaar'] as Neighborhood[]).flatMap(d=>Array.from({length:7},(_,slot)=>[d,slot] as const)).find(([d,slot])=>!this.pools[d][slot]);
+   if(missing){this.pooled(missing[1],missing[0]);this.scheduleWarmUp();return;}
+   this.warmed=true;this.compileAll();
+  });
+ }
+ private compileAll(){
+  const extras:T.Object3D[]=[];
+  for(const d of Object.keys(this.pools) as Neighborhood[])for(const c of this.pools[d])if(c&&!c.parent){this.scenery.add(c);extras.push(c);}
+  const hidden=this.scenery.children.filter(c=>!c.visible);hidden.forEach(c=>c.visible=true);
+  const samples=(['bus','truck','cng','car','rickshaw','bicycle','motorbike'] as const).map(k=>createVehicle(k,0x378e84));samples.push(createVehicle('truck',VEHICLES[4].color,{},{player:true}),pedestrian(0xd2ba8b,1,true),seatedCow(1),roadHazard('pothole',1.6,1.4,1),roadHazard('paan',1.6,1.4,2));
+  samples.forEach(m=>this.scene.add(m));
+  this.renderer.compile(this.scene,this.camera);
+  samples.forEach(m=>disposeModel(m));extras.forEach(c=>this.scenery.remove(c));hidden.forEach(c=>c.visible=false);
  }
  private makeChunk(seed:number,neighborhood:Neighborhood){
   const g=neighborhood==='bazaar'?this.makeBazaar(seed):neighborhood==='riverfront'?this.makeRiverfront(seed):this.makeBoulevard(seed);
@@ -312,19 +344,6 @@ export class World {
   box(g,x,2.65,z,1.25,.08,2.0,0xd2a951);
   const seller=pedestrian(0xeac693);seller.position.set(x+(x<0?-.52:.52),.1,z+.30);g.add(seller);
  }
- private bendChunk(g:T.Group){
-  if(g.userData.bentAt===g.position.z)return;
-  g.userData.bentAt=g.position.z;
-  g.traverse(o=>{if(!(o instanceof T.Mesh))return;const attr=o.geometry.getAttribute('position'),normal=o.geometry.getAttribute('normal');
-   if(!o.userData.straightPositions){o.userData.straightPositions=new Float32Array(attr.array);if(normal)o.userData.straightNormals=new Float32Array(normal.array);}
-   const positions=o.userData.straightPositions as Float32Array,normals=o.userData.straightNormals as Float32Array|undefined;
-   for(let i=0;i<attr.count;i++){
-    const z=positions[i*3+2]+g.position.z;attr.setX(i,positions[i*3]+pathX(z));
-    if(normal&&normals){const slope=.04*Math.cos(z*.008)+.0342*Math.cos(z*.019),nx=normals[i*3],ny=normals[i*3+1],nz=normals[i*3+2]-slope*nx,l=Math.hypot(nx,ny,nz)||1;normal.setXYZ(i,nx/l,ny/l,nz/l);}
-   }
-   attr.needsUpdate=true;if(normal)normal.needsUpdate=true;o.geometry.computeBoundingSphere();o.geometry.computeBoundingBox();
-  });
- }
  private tree(g:T.Group,x:number,z:number,seed:number){tube(g,[x,0,z],[x+.2,5,z],.17,0x6b6347);for(let i=0;i<6;i++){const a=i*Math.PI/3;const leaf=sphere(g,x+Math.cos(a)*.95,5.3+rand(seed+i)*.8,z+Math.sin(a)*.95,1.15,[0x748255,0x4a7252,0x788954][i%3],1.2,.7,1);leaf.castShadow=true;}}
  private makePalace(){
   const g=this.palace;const pink=0xe395a1,trim=0xffc4b6,dark=0x715975;
@@ -363,23 +382,29 @@ export class World {
  setReduced(v:boolean){this.reduced=v;}
  shake(amplitude:number){this.shakeRemaining=SHAKE_SECONDS;this.shakeAmplitude=amplitude;}
  land(){this.sinceLanding=0;}
+ setLook(look:VehicleLook){this.look=look;this.lookKey=JSON.stringify(look);}
  resize(){const w=innerWidth,h=innerHeight;this.camera.aspect=w/h;this.camera.updateProjectionMatrix();const cap=this.quality==='high'?1.65:this.quality==='low'?.85:1.25;this.renderer.setPixelRatio(Math.min(devicePixelRatio,cap)*this.scale);this.renderer.setSize(w,h,false);}
  render(sim:Simulation,dt:number,steer:number,preview=false){
   const moving=sim.status==='playing'; if(moving||preview)this.clock+=dt; const z=preview?-12:sim.z;
-  if(this.currentSimulation!==sim){for(const actor of this.actors.values())disposeModel(actor);this.actors.clear();for(const effect of this.projectiles.values())disposeModel(effect);this.projectiles.clear();this.currentSimulation=sim;let palaceDistance=sim.routeLength*.5;for(let d=0;d<sim.routeLength;d+=24)if(sim.neighborhoodAt(d)==='riverfront'){palaceDistance=d+95;break;}this.palace.position.set(pathX(-palaceDistance)+28,0,-palaceDistance);this.camera.position.set(pathX(sim.z)+sim.x*.43,sim.vehicleIndex>=3?4.8:3.2,sim.z+(sim.vehicleIndex>=3?8.5:5.8));}
-  if(this.lastVehicle!==sim.vehicleIndex){disposeModel(this.player);this.player=createVehicle(VEHICLES[sim.vehicleIndex].id,VEHICLES[sim.vehicleIndex].color);this.scene.add(this.player);this.lastVehicle=sim.vehicleIndex;}
+  if(this.currentSimulation!==sim){for(const actor of this.actors.values())disposeModel(actor);this.actors.clear();for(const effect of this.projectiles.values())disposeModel(effect);this.projectiles.clear();for(const m of this.snackModels.values())disposeModel(m);this.snackModels.clear();this.currentSimulation=sim;let palaceDistance=sim.routeLength*.5;for(let d=0;d<sim.routeLength;d+=24)if(sim.neighborhoodAt(d)==='riverfront'){palaceDistance=d+95;break;}this.palace.position.set(pathX(-palaceDistance)+28,0,-palaceDistance);this.camera.position.set(pathX(sim.z)+sim.x*.43,chaseHeight(sim.vehicleIndex),sim.z+(sim.vehicleIndex>=3?8.5:5.8));}
+  if(this.lastVehicle!==sim.vehicleIndex||this.builtLookKey!==this.lookKey){disposeModel(this.player);this.player=createVehicle(VEHICLES[sim.vehicleIndex].id,VEHICLES[sim.vehicleIndex].color,this.look,{player:true});this.scene.add(this.player);this.lastVehicle=sim.vehicleIndex;this.builtLookKey=this.lookKey;}
   this.player.position.set(pathX(z)+sim.x,.025+sim.y,z);this.player.rotation.y=-steer*.17-Math.atan((pathX(z-.2)-pathX(z))/.2);
   animateVehicle(this.player,this.clock,preview?2:sim.speed,steer);
   this.sinceLanding+=dt;this.player.scale.y=landingSquash(this.sinceLanding);
+  this.player.rotation.z=sim.effects.stomach>0&&!this.reduced?Math.sin(this.clock*11)*.055:0;
+  this.renderMagnet(sim,z);
   if(sim.invulnerable>0)this.player.visible=Math.floor(this.clock*9)%3!==0;else this.player.visible=true;
   for(let i=0;i<this.chunks.length;i++){
    let c=this.chunks[i];let chunkZ=c.position.z;
    while(chunkZ-z>55)chunkZ-=48*this.chunks.length;
    while(chunkZ-z<-290)chunkZ+=48*this.chunks.length;
    const district=sim.neighborhoodAt(Math.max(0,-chunkZ+24));
-   if(c.userData.neighborhood!==district){disposeModel(c);c=this.makeChunk(Math.abs(Math.round(chunkZ/48)),district);this.chunks[i]=c;this.scenery.add(c);}
-   c.position.set(0,0,chunkZ);c.rotation.y=0;this.bendChunk(c);
+   if(c.userData.neighborhood!==district){this.scenery.remove(c);c=this.pooled(i,district);this.chunks[i]=c;this.scenery.add(c);}
+   c.position.set(0,0,chunkZ);c.rotation.y=0;this.bender.queue(c);
+   // A block still bending is finished outright once it nears the far plane (always at a ride's first frame).
+   if(z-chunkZ<this.camera.far+10)this.bender.finish(c);
   }
+  this.bender.work(3);if(moving)this.lastRideFrame=performance.now();
   this.district=sim.neighborhood;
   this.palace.visible=Math.abs(this.palace.position.z-z)<190;
   const lightTint=this.district==='bazaar'?0xffd5aa:this.district==='riverfront'?0xffe4bd:0xffeace;
@@ -409,17 +434,57 @@ export class World {
 
   }
   for(const [id,m] of this.actors)if(!keep.has(id)){disposeModel(m);this.actors.delete(id);}
-  this.renderProjectiles(sim);
-  const large=sim.vehicleIndex>=3;const camX=pathX(z)+sim.x*.43;const target=new T.Vector3(camX,large?4.8:3.2,z+(large?8.5:5.8));
+  this.renderProjectiles(sim);this.renderPickups(sim,z);
+  const large=sim.vehicleIndex>=3;const camX=pathX(z)+sim.x*.43;const target=new T.Vector3(camX,chaseHeight(sim.vehicleIndex),z+(large?8.5:5.8));
   if(preview)target.set(pathX(z)+5,4.5,z+7);
   this.camera.position.lerp(target,1-Math.exp(-dt*7));const cameraBase=this.camera.position.clone();
   this.shakeRemaining=Math.max(0,this.shakeRemaining-dt);const shake=shakeOffset(this.shakeRemaining,this.shakeAmplitude,this.clock,this.reduced);
   this.camera.position.x+=shake.x;this.camera.position.y+=shake.y;this.camera.lookAt(pathX(z-7)+sim.x*.3,large?1.4:1.0,z-9);
-  this.camera.fov=(innerHeight>innerWidth?70:58)+(this.reduced?0:Math.min(sim.speed,22)*.2);this.camera.updateProjectionMatrix();
+  this.camera.fov=(innerHeight>innerWidth?70:58)+(this.reduced?0:Math.min(sim.speed,22)*.2+(sim.effects.boost>0?6:0));this.camera.updateProjectionMatrix();
   this.sun.position.set(pathX(z)-24,36,z+18);this.sun.target.position.set(pathX(z),0,z-12);
-  this.dust.position.set(pathX(z),0,z);this.dust.rotation.y=this.clock*.007;
+  this.renderStreaks(sim);this.dust.position.set(pathX(z),0,z);this.dust.rotation.y=this.clock*.007;
   this.renderer.render(this.scene,this.camera);this.camera.position.copy(cameraBase);
   if(this.quality==='auto'&&dt>0){this.frameAvg=this.frameAvg*.97+dt*1000*.03;if(++this.frames%180===0&&this.frameAvg>24&&this.scale>.7){this.scale=Math.max(.7,this.scale-.1);this.resize();}}
+ }
+ private renderPickups(sim:Simulation,z:number){
+  ([1,5] as const).forEach((value,i)=>{const mesh=this.coinMeshes[i];let n=0;
+   for(const coin of sim.coins){if(coin.value!==value||coin.collected||coin.z-z>25||coin.z-z<-110||n>=256)continue;
+    // Coins rock to face the chase camera (so the ৳ stays readable) and a glint ripples down each trail.
+    this.dummy.position.set(pathX(coin.z)+coin.x,coin.y+Math.sin(this.clock*3+coin.id*.7)*.07,coin.z);this.dummy.rotation.set(0,Math.sin(this.clock*2.2+coin.id*.45)*.85,0);this.dummy.updateMatrix();mesh.setMatrixAt(n++,this.dummy.matrix);}
+   mesh.count=n;mesh.instanceMatrix.needsUpdate=true;});
+  const keep=new Set<number>();
+  for(const snack of sim.snacks){if(snack.eaten||snack.z-z>25||snack.z-z<-110)continue;keep.add(snack.id);let model=this.snackModels.get(snack.id);
+   if(!model){model=snackModel(snack.kind);const halo=new T.Sprite(this.haloMaterial(snack.kind));halo.position.y=({cha:.2,jhalmuri:.32,chaap:.1})[snack.kind];model.add(halo);model.userData.halo=halo;this.snackModels.set(snack.id,model);this.scene.add(model);}
+   model.position.set(pathX(snack.z)+snack.x,.75+Math.sin(this.clock*2.4+snack.id)*.12,snack.z);model.rotation.y=this.clock*1.6;(model.userData.halo as T.Sprite).scale.setScalar(.95+Math.sin(this.clock*3.2+snack.id)*.07);}
+  for(const [id,m] of this.snackModels)if(!keep.has(id)){disposeModel(m);this.snackModels.delete(id);}
+ }
+ // A soft coloured glow behind each snack, shared per kind (sprites are not disposed with the model).
+ private haloMaterial(kind:string){let m=this.haloMaterials.get(kind);if(!m){this.haloTexture??=canvasTexture(64,64,c=>{const g=c.createRadialGradient(32,32,0,32,32,32);g.addColorStop(0,'#ffffffcc');g.addColorStop(.35,'#ffffff66');g.addColorStop(1,'#ffffff00');c.fillStyle=g;c.fillRect(0,0,64,64);});
+  m=new T.SpriteMaterial({map:this.haloTexture,color:({cha:0xffb347,jhalmuri:0xff6a3d,chaap:0x3fe0c5} as Record<string,number>)[kind]??0xffffff,blending:T.AdditiveBlending,depthWrite:false,transparent:true,opacity:.85});this.haloMaterials.set(kind,m);}return m;}
+ // The jhalmuri magnet field: a red-and-gold pole ring at the real pull reach, with ripples drawn inward.
+ private makeMagnetField(){
+  const tex=canvasTexture(256,256,c=>{const g=c.createRadialGradient(128,128,40,128,128,128);g.addColorStop(0,'#ff8a5000');g.addColorStop(.72,'#ffb44a14');g.addColorStop(.93,'#ff8a4a5c');g.addColorStop(1,'#ff8a4a00');c.fillStyle=g;c.fillRect(0,0,256,256);c.lineWidth=7;for(let i=0;i<16;i++){c.strokeStyle=i%2?'#ffd25e':'#ef4a32';c.beginPath();c.arc(128,128,119,i*Math.PI/8+.04,(i+1)*Math.PI/8-.04);c.stroke();}});
+  const disc=new T.Mesh(new T.CircleGeometry(1,48),new T.MeshBasicMaterial({map:tex,transparent:true,depthWrite:false,toneMapped:false}));disc.rotation.x=-Math.PI/2;this.magnetField.add(disc);this.magnetField.userData.disc=disc;
+  for(let i=0;i<2;i++){const ripple=new T.Mesh(new T.RingGeometry(.94,1,48),new T.MeshBasicMaterial({color:0xffd25e,transparent:true,depthWrite:false,toneMapped:false}));ripple.rotation.x=-Math.PI/2;ripple.position.y=.005;this.magnetRipples.push(ripple);this.magnetField.add(ripple);}
+  this.magnetField.visible=false;this.scene.add(this.magnetField);
+ }
+ private renderMagnet(sim:Simulation,z:number){
+  const fade=magnetOpacity(sim.effects.magnet,this.clock,this.reduced);this.magnetField.visible=fade>0;if(!this.magnetField.visible)return;
+  const disc=this.magnetField.userData.disc as T.Mesh;(disc.material as T.MeshBasicMaterial).opacity=fade;
+  this.magnetField.position.set(pathX(z)+sim.x,.06+sim.y,z);this.magnetField.scale.setScalar(sim.magnetReach);disc.rotation.z=this.reduced?0:this.clock*.5;
+  // Ripples drift inward to show the pull; the gentler camera keeps the field still.
+  this.magnetRipples.forEach((ripple,i)=>{const phase=(this.clock*.8+i*.5)%1;ripple.visible=!this.reduced;ripple.scale.setScalar(1-phase*.7);(ripple.material as T.MeshBasicMaterial).opacity=Math.sin(phase*Math.PI)*.55*fade;});
+ }
+ // Cha speed lines: warm streaks rushing past the camera edges in one instanced draw (off with the gentler camera).
+ private makeStreaks(){
+  this.streaks=new T.InstancedMesh(new T.BoxGeometry(.014,.014,1),new T.MeshBasicMaterial({color:0xffd59a,transparent:true,opacity:0,depthWrite:false,blending:T.AdditiveBlending,fog:false,toneMapped:false}),40);this.streaks.frustumCulled=false;this.streaks.visible=false;this.camera.add(this.streaks);this.scene.add(this.camera);
+ }
+ private renderStreaks(sim:Simulation){
+  const on=sim.effects.boost>0&&!this.reduced;this.streaks.visible=on;if(!on)return;
+  (this.streaks.material as T.MeshBasicMaterial).opacity=Math.min(1,sim.effects.boost)*.42;const spread=Math.tan(T.MathUtils.degToRad(this.camera.fov/2));
+  for(let i=0;i<40;i++){const a=i*2.39996+rand(i)*.3,edge=.62+rand(i+40)*.5,depth=17-((rand(i+80)+this.clock*(1.1+rand(i+120)*.6))%1)*12;
+   this.dummy.position.set(Math.cos(a)*edge*depth*spread*this.camera.aspect,Math.sin(a)*edge*depth*spread,-depth);this.dummy.rotation.set(0,0,0);this.dummy.scale.set(1,1,.8+sim.speed*.07);this.dummy.updateMatrix();this.streaks.setMatrixAt(i,this.dummy.matrix);}
+  this.streaks.instanceMatrix.needsUpdate=true;this.dummy.scale.set(1,1,1);
  }
  private renderProjectiles(sim:Simulation){
   const keep=new Set<number>();

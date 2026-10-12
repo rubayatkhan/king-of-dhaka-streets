@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { JUMPS, Simulation, VEHICLES, type Traffic } from '../src/simulation';
 import { SPEED_CAP } from '../src/campaign';
+import { BASE_POWER_UPS, COIN_HEIGHT, type Coin } from '../src/pickups';
+import { powerUpStats } from '../src/economy';
 
 const straight = { steer: 0, brake: false };
 function advance(sim: Simulation, seconds: number, steer = 0, brake = false) {
@@ -12,7 +14,7 @@ function obstacle(patch: Partial<Traffic> = {}): Traffic {
 
 // A deliberately simple player: select a visible gap, brake for imminent threats,
 // hop unavoidable ground hazards, and use the truck's horn. It has no access to unrendered future route geometry.
-function pilot(sim: Simulation) {
+function pilot(sim: Simulation, followCoins = false) {
   const vehicle = VEHICLES[sim.vehicleIndex];
   // Like a player, hop a pothole or paan spill that steering has not avoided in time.
   if (sim.traffic.some(t => (t.kind === 'pothole' || t.kind === 'paan') && !t.passed && Math.abs(sim.x - t.x) < (vehicle.width + t.width) * 0.38 &&
@@ -33,6 +35,10 @@ function pilot(sim: Simulation) {
     }
     for (const p of sim.projectiles) {
       if (sim.z - p.targetZ > -vehicle.length && sim.z - p.targetZ < Math.max(18, sim.speed * 3.5) && Math.abs(x - p.targetX) < vehicle.width / 2 + p.radius + 0.35) cost += 1000;
+    }
+    if (followCoins && cost < 10) {
+      const coin = sim.coins.find(c => c.trail === 'safe' && !c.collected && sim.z - c.z > -1 && sim.z - c.z < 40);
+      if (coin && Math.abs(x - coin.x) < 0.35) cost -= 40;
     }
     if (cost < bestCost) { target = x; bestCost = cost; }
   }
@@ -143,6 +149,37 @@ describe('handling and hazards', () => {
     const sim = new Simulation(0, 1, 1); sim.start(); sim.distance = 190; sim.z = -190; sim.traffic = [];
     sim.update(1 / 60, straight); advance(sim, 2, 1); advance(sim, 7);
     expect(sim.health).toBe(3); expect(sim.status).toBe('playing'); expect(sim.rearThreats).toHaveLength(0);
+  });
+
+  const warnedTruck = (sim: Simulation, x: number) => {
+    sim.rearThreats = [{ actorId: 7, kind: 'truck', x, z: sim.z + 36, urgency: 0, timeToContact: 7, warningRemaining: 0.5, phase: 'warning' }];
+    sim.traffic.push(obstacle({ id: 7, kind: 'truck', x, z: sim.z + 36, width: 2.5, length: 6.5, speed: 25, behavior: 'rear-threat', phase: 'warning', warn: true }));
+  };
+  const passedRearThreat = (sim: Simulation) => sim.traffic.some(t => t.id === 7 && t.passed);
+
+  it('brings a warned truck past even a rider racing on cha', () => {
+    const sim = new Simulation(2, 1, 2); sim.start(); sim.traffic = []; sim.coins = []; sim.snacks = [];
+    sim.distance = 200; sim.z = -200; sim.x = 3.5; sim.speed = 30; warnedTruck(sim, -1);
+    for (let f = 0; f < 6 * 60 && !passedRearThreat(sim); f++) { sim.effects.boost = 5; sim.update(1 / 60, straight); }
+    expect(passedRearThreat(sim)).toBe(true); expect(sim.status).toBe('playing');
+  });
+
+  it('swerves a warned truck around a boxed-in rider instead of calling it off', () => {
+    const sim = new Simulation(0, 1, 1); sim.start(); sim.traffic = []; sim.coins = []; sim.snacks = [];
+    sim.distance = 200; sim.z = -200; sim.speed = 3; warnedTruck(sim, 0);
+    sim.traffic.push(...[-4.4, -2.5, 2.5, 4.4].map((x, k) => obstacle({ id: 20 + k, kind: 'car', x, z: sim.z - 4, width: 1.8, length: 3.5, speed: 3 })));
+    const events: string[] = [];
+    for (let f = 0; f < 8 * 60 && !passedRearThreat(sim); f++) { sim.update(1 / 60, straight); events.push(...sim.events.map(e => e.text)); }
+    expect(events.some(t => /slowed behind/.test(t))).toBe(false);
+    expect(events.some(t => /swerves/i.test(t))).toBe(true);
+    expect(passedRearThreat(sim)).toBe(true); expect(sim.health).toBe(3); expect(sim.status).toBe('playing');
+  });
+
+  it('only warns of a rear truck when there is road left for it to arrive', () => {
+    const sim = new Simulation(4, 1, 2); sim.start(); sim.traffic = []; sim.speed = 27;
+    sim.distance = sim.routeLength - 150; sim.z = -sim.distance; sim.remaining = 150;
+    sim.update(1 / 60, straight);
+    expect(sim.rearThreats).toHaveLength(0);
   });
 
   it('awards a near-miss chain only for close clean passes and breaks it even on immune contact', () => {
@@ -513,4 +550,166 @@ describe('jumping', () => {
     lost.jump(); advance(lost, 0.5);
     expect(lost.status).toBe('lost'); expect(lost.airborne).toBe(false); expect(lost.y).toBe(0);
   });
+});
+
+describe('taka and street food', () => {
+  const coin = (patch: Partial<Coin> = {}): Coin => ({ id: 501, group: 1, x: 0, y: COIN_HEIGHT, z: -3, value: 1, trail: 'safe', collected: false, ...patch });
+  const bare = (index = 0, lesson = 0) => { const sim = new Simulation(index, 1, lesson); sim.start(); sim.traffic = []; sim.coins = []; sim.snacks = []; return sim; };
+
+  it('lays coin trails and snacks on every route', () => {
+    for (let stage = 0; stage < 15; stage++) {
+      const sim = new Simulation(Math.floor(stage / 3), 9, stage % 3);
+      expect(sim.coins.length, `stage ${stage}`).toBeGreaterThan(20);
+      expect(sim.snacks.length).toBeGreaterThan(0); expect(sim.snacks.length).toBeLessThanOrEqual(4);
+    }
+  });
+
+  it('collects ground coins in its path and counts a quick chain', () => {
+    const sim = bare(); sim.speed = 10;
+    sim.coins = [coin({ id: 1, z: -3 }), coin({ id: 2, z: -4.2 }), coin({ id: 3, x: 4, z: -5 })];
+    advance(sim, 0.6);
+    expect(sim.taka).toBe(2);
+    expect(sim.events.filter(e => e.type === 'coin').map(e => e.chain)).toEqual([1, 2]);
+  });
+
+  it('needs a jump to collect a raised arc coin', () => {
+    for (const hop of [false, true]) {
+      const sim = bare(); sim.speed = 10; sim.coins = [coin({ trail: 'arc', y: COIN_HEIGHT + 0.7, z: -3.5 })];
+      if (hop) sim.jump();
+      advance(sim, 0.6);
+      expect(sim.taka, `jump ${hop}`).toBe(hop ? 1 : 0);
+    }
+  });
+
+  it('collects an arc coin only in the air, even one sitting at ground height', () => {
+    for (const hop of [false, true]) {
+      const sim = bare(); sim.speed = 10; sim.coins = [coin({ trail: 'arc', y: COIN_HEIGHT, z: -3.5 })];
+      if (hop) sim.jump();
+      advance(sim, 0.6);
+      expect(sim.taka, `jump ${hop}`).toBe(hop ? 1 : 0);
+    }
+  });
+
+  it('does not let the magnet pull an arc coin down to a grounded rider', () => {
+    const sim = bare(); sim.speed = 10; sim.effects.magnet = 5; sim.coins = [coin({ trail: 'arc', x: 1.5, y: COIN_HEIGHT + 0.5, z: -6 })];
+    advance(sim, 1);
+    expect(sim.taka).toBe(0); expect(sim.coins[0].x).toBe(1.5); expect(sim.coins[0].y).toBe(COIN_HEIGHT + 0.5);
+  });
+
+  it('pulls nearby coins in while the jhalmuri magnet is active', () => {
+    for (const magnet of [0, 5]) {
+      const sim = bare(); sim.speed = 10; sim.effects.magnet = magnet; sim.coins = [coin({ x: 2.2, z: -6 })];
+      advance(sim, 1);
+      expect(sim.taka, `magnet ${magnet}`).toBe(magnet ? 1 : 0);
+    }
+  });
+
+  it('reports the magnet reach the world draws: pull radius plus the rider half-width', () => {
+    expect(new Simulation(0, 1, 0, { ...BASE_POWER_UPS, magnetRadius: 3 }).magnetReach).toBeCloseTo(3 + 0.68 / 2 + 0.45);
+    expect(new Simulation(4, 1, 0).magnetReach).toBeCloseTo(2 + 2.5 / 2 + 0.45);
+  });
+
+  it('eats a cha for a speed boost and double street rep', () => {
+    const sim = bare(); sim.snacks = [{ id: 1, kind: 'cha', x: 0, z: -2, eaten: false }];
+    advance(sim, 3);
+    expect(sim.events.some(e => e.type === 'snack' && e.kind === 'cha')).toBe(true);
+    expect(sim.speed).toBeGreaterThan(sim.maxSpeed * 1.1);
+    sim.traffic = [obstacle({ kind: 'cng', x: 2.5, z: sim.z - 2, width: 1.5, length: 2.5 })];
+    const before = sim.score; advance(sim, 1);
+    expect(sim.score - before).toBe(30);
+  });
+
+  it('never lets cha push past the 100 km/h cap', () => {
+    const sim = bare(4, 2); sim.distance = sim.routeLength * 0.8; sim.speed = 27; sim.effects.boost = 5;
+    let top = 0;
+    for (let i = 0; i < 120 && sim.status === 'playing'; i++) { advance(sim, 1 / 60); top = Math.max(top, sim.speed); }
+    expect(top).toBeLessThanOrEqual(SPEED_CAP + 1e-9);
+  });
+
+  it('lets a chaap full belly absorb exactly one ordinary hit', () => {
+    const sim = bare(); sim.speed = 10; sim.effects.belly = true;
+    sim.traffic = [obstacle({ kind: 'cng', id: 1 })]; sim.update(1 / 60, straight);
+    expect(sim.health).toBe(3); expect(sim.effects.belly).toBe(false); expect(sim.events.some(e => e.type === 'belly')).toBe(true);
+    advance(sim, 2.1); sim.traffic = [obstacle({ kind: 'cng', id: 2, z: sim.z })]; sim.update(1 / 60, straight);
+    expect(sim.health).toBe(2);
+  });
+
+  it('slows and wobbles the rider with an upset stomach', () => {
+    const calm = bare(), upset = bare(); upset.effects.stomachPending = 0.1;
+    advance(calm, 3); advance(upset, 3);
+    expect(upset.events.some(e => e.type === 'stomach')).toBe(true);
+    expect(upset.speed).toBeLessThan(calm.speed * 0.8);
+    expect(upset.x).not.toBe(0);
+  });
+
+  it('leaves coins in a warned bus lane for a bold rider to grab before it arrives', () => {
+    const sim = bare(4, 2); sim.speed = 20; sim.distance = 200; sim.z = -200;
+    sim.rearThreats = [{ actorId: 7, kind: 'truck', x: 0.5, z: sim.z + 36, urgency: 0, timeToContact: 7, warningRemaining: 2, phase: 'warning' }];
+    sim.traffic = [obstacle({ id: 7, kind: 'truck', x: 0.5, z: sim.z + 36, width: 2.5, length: 6.5, speed: 30, behavior: 'rear-threat', phase: 'warning', warn: true })];
+    sim.coins = [coin({ id: 1, x: 0, z: -222 })];
+    advance(sim, 1.5);
+    expect(sim.status).toBe('playing'); expect(sim.coins[0].collected).toBe(true);
+  });
+
+  it('stops snack effects once the ride is over', () => {
+    const sim = bare(); sim.effects.stomachPending = 0.5; sim.distance = sim.routeLength - 0.2;
+    advance(sim, 1);
+    expect(sim.status).toBe('won'); expect(sim.events.some(e => e.type === 'stomach')).toBe(false);
+  });
+
+  it('keeps every mission winnable with fully upgraded power-ups', () => {
+    const maxed = powerUpStats({ cha: 4, jhalmuri: 4, chaap: 4 }), losses: string[] = [];
+    for (let stage = 0; stage < 15; stage++) {
+      let lost = 0;
+      for (let i = 1; i <= 10; i++) {
+        const sim = new Simulation(Math.floor(stage / 3), Math.imul(i, 2654435761) >>> 0, stage % 3, maxed); sim.start();
+        for (let frame = 0; frame < 180 * 60 && sim.status === 'playing'; frame++) pilot(sim);
+        if (sim.status !== 'won') lost++;
+      }
+      if (lost > 1) losses.push(`stage ${stage}: ${lost}/10`);
+    }
+    expect(losses).toEqual([]);
+  }, 120000);
+
+  it('keeps a coin that sits right beside moving traffic for a daring rider', () => {
+    const sim = bare(); sim.speed = 10; sim.x = 1.7;
+    sim.traffic = [obstacle({ id: 2, kind: 'cng', x: 3, z: -28, width: 1.5, length: 2.5, speed: 3 })];
+    sim.coins = [coin({ id: 3, x: 1.7, z: -28 })];
+    advance(sim, 3.5);
+    expect(sim.health).toBe(3); expect(sim.coins[0].collected).toBe(true);
+  });
+
+  // Moving traffic may drift across a trail (a risk the rider weighs), but a coin is never a trap: collecting it
+  // never puts the rider onto a parked hazard (arc coins may sit over a hazard this vehicle clears in the air).
+  it('never offers a coin whose line would put the rider onto a parked hazard', () => {
+    const bad: string[] = [];
+    for (let stage = 0; stage < 15; stage++) for (let seed = 1; seed <= 4; seed++) {
+      const sim = new Simulation(Math.floor(stage / 3), seed, stage % 3), vehicle = VEHICLES[sim.vehicleIndex];
+      const clears = JUMPS[vehicle.id].clears as string[], reachZ = vehicle.length / 2 + 0.3;
+      sim.start();
+      for (let frame = 0; frame < 180 * 60 && sim.status === 'playing'; frame++) {
+        pilot(sim, true);
+        for (const coin of sim.coins) {
+          if (coin.collected || Math.abs(sim.z - coin.z) >= reachZ) continue;
+          const actor = sim.traffic.find(t => t.speed === 0 && t.kind !== 'pedestrian' && t.behavior !== 'paan-thrower' && !t.passed && !(coin.trail === 'arc' && clears.includes(t.kind)) &&
+            Math.abs(coin.x - t.x) < (vehicle.width + t.width) * (t.kind === 'pothole' || t.kind === 'paan' ? 0.38 : 0.43) &&
+            Math.abs(sim.z - t.z) < (vehicle.length + t.length) * 0.43);
+          if (actor && !bad.some(b => b.endsWith(`#${seed}/${stage}/${coin.id}`))) bad.push(`${vehicle.id} ${coin.trail} coin into ${actor.kind} #${seed}/${stage}/${coin.id}`);
+        }
+      }
+    }
+    expect(bad).toEqual([]);
+  }, 120000);
+
+  // Coins stay put when a warned bus or drifting traffic crosses their trail, and this cautious pilot skips those.
+  it('lets a coin-following pilot collect at least 85% of safe-trail coins', () => {
+    let safe = 0, got = 0;
+    for (let stage = 0; stage < 15; stage++) for (let seed = 1; seed <= 4; seed++) {
+      const sim = new Simulation(Math.floor(stage / 3), seed, stage % 3); sim.start();
+      for (let frame = 0; frame < 180 * 60 && sim.status === 'playing'; frame++) pilot(sim, true);
+      const trail = sim.coins.filter(c => c.trail === 'safe' && -c.z < sim.distance);
+      safe += trail.length; got += trail.filter(c => c.collected).length;
+    }
+    expect(got / safe).toBeGreaterThanOrEqual(0.85);
+  }, 120000);
 });
