@@ -3,6 +3,8 @@ import type { Recipe } from './soundbank';
 
 /** How far behind the scheduler may fall (a frame hitch) and still hand out every step; past this it is a stall. */
 const STALL_SECONDS = 0.5;
+/** A layer faded to nothing stops scheduling notes this long after its target hits zero, so its fade-out still completes. */
+const SILENT_GRACE = 1.5;
 
 /** Hands out sixteenth-note steps a little ahead of time, each once; steps already late after a stall are skipped. */
 export class StepScheduler {
@@ -48,7 +50,9 @@ export class MusicPlayer {
   private scene: Scene = 'menu'; private previous: Scene = 'menu'; private switchAt = 0;
   private bed?: { scene: Scene; source: AudioBufferSourceNode; from: number };
   /** Beds already told to stop that still sound until their stop time, so their scene's synthesized base stays quiet. */
-  private outgoing: { scene: Scene; from: number; until: number }[] = [];
+  private outgoing: { scene: Scene; from: number; until: number; source: AudioBufferSourceNode }[] = [];
+  /** When each layer's target gain dropped to zero; cleared while it sounds. A layer silent past SILENT_GRACE schedules no notes. */
+  private silentSince: Partial<Record<Layer, number>> = {};
   private beds = new Map<Scene, AudioBuffer>(); private loads = new Map<Scene, Promise<void>>();
   private manifest?: Promise<BedManifest | undefined>;
 
@@ -69,7 +73,10 @@ export class MusicPlayer {
       this.syncBed(this.switchAt);
     }
     const gains = layerGains(state);
-    for (const layer of LAYERS) this.layers[layer].gain.setTargetAtTime(gains[layer], now, 0.4);
+    for (const layer of LAYERS) {
+      this.layers[layer].gain.setTargetAtTime(gains[layer], now, 0.4);
+      if (gains[layer] > 0) delete this.silentSince[layer]; else this.silentSince[layer] ??= now;
+    }
     this.prepare(state.scene);
   }
 
@@ -91,7 +98,11 @@ export class MusicPlayer {
   stop(): void {
     if (this.timer !== undefined) clearInterval(this.timer);
     this.timer = undefined; this.scheduler.stop();
-    this.stopBed(this.host.context.currentTime);
+    const now = this.host.context.currentTime;
+    this.stopBed(now);
+    // A bed already told to stop at a later bar line must not outlive the music.
+    for (const { source } of this.outgoing) { try { source.stop(now); } catch { /* Already stopped. */ } }
+    this.outgoing = [];
     for (const layer of LAYERS) this.layers[layer].gain.setTargetAtTime(0, this.host.context.currentTime, 0.05);
   }
 
@@ -115,7 +126,7 @@ export class MusicPlayer {
     if (!this.bed) return;
     const { scene, source, from } = this.bed;
     try { source.stop(at); } catch { /* Already stopped. */ }
-    if (at > from) this.outgoing.push({ scene, from, until: at });
+    if (at > from) this.outgoing.push({ scene, from, until: at, source });
     this.bed = undefined;
   }
 
@@ -124,11 +135,14 @@ export class MusicPlayer {
   }
 
   private tick(): void {
-    for (const step of this.scheduler.due(this.host.context.currentTime)) {
+    const now = this.host.context.currentTime;
+    for (const step of this.scheduler.due(now)) {
       const when = this.scheduler.timeOf(step), scene = this.sceneAt(when), loopStep = step % LOOP_STEPS;
       const bedPlaying = this.bedCovers(scene, when);
       for (const layer of LAYERS) {
         if (layer === 'base' && bedPlaying) continue;
+        const silent = this.silentSince[layer];
+        if (silent !== undefined && now - silent > SILENT_GRACE) continue;
         for (const recipe of patternSteps(scene, layer)[loopStep]) this.host.play(recipe, when, this.layers[layer]);
       }
     }

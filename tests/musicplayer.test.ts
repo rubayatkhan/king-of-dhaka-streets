@@ -90,6 +90,32 @@ describe('music player', () => {
     expect(bazaarBed.stop.mock.calls.at(-1)![0]).toBeCloseTo(switchAt, 9);
   });
 
+  it('stops scheduling a layer that has been silent for a while, and resumes when it comes back', async () => {
+    const h = makeHost(), p = new MusicPlayer(h.host), layers = (p as unknown as { layers: Record<string, unknown> }).layers;
+    const run = (seconds: number) => { const end = h.context.currentTime + seconds; while (h.context.currentTime < end) { h.context.currentTime += .02; vi.advanceTimersByTime(25); } };
+    const boostPlays = (from: number) => (h.host.play.mock.calls.slice(from) as unknown as [unknown, number, unknown][]).filter(([, , out]) => out === layers.boost);
+    p.setState({ ...ride, boost: true }); await vi.advanceTimersByTimeAsync(0); run(3);
+    expect(boostPlays(0).length).toBeGreaterThan(0);
+    p.setState(ride); const afterOff = h.host.play.mock.calls.length;
+    run(1.4); expect(boostPlays(afterOff).length).toBeGreaterThan(0); // its fade-out still completes
+    run(3); const silent = h.host.play.mock.calls.length; run(3);
+    expect(boostPlays(silent)).toEqual([]);
+    p.setState({ ...ride, boost: true }); const back = h.host.play.mock.calls.length; run(3);
+    expect(boostPlays(back).length).toBeGreaterThan(0);
+  });
+
+  it('stops an outgoing bed straight away when the music stops before the bar where it was due to end', async () => {
+    const h = makeHost({ bazaar: 'bazaar.mp3' }), p = new MusicPlayer(h.host);
+    p.setState(ride); await vi.advanceTimersByTimeAsync(0);
+    const bazaarBed = h.sources[0];
+    h.context.currentTime = BAR * 1.5; p.setState({ ...ride, scene: 'riverfront' });
+    const switchAt = .05 + BAR * 2;
+    expect(bazaarBed.stop.mock.calls.at(-1)![0]).toBeCloseTo(switchAt, 9);
+    h.context.currentTime = BAR * 1.6; p.stop();
+    expect(bazaarBed.stop.mock.calls.at(-1)![0]).toBeLessThanOrEqual(h.context.currentTime);
+    expect((p as unknown as { outgoing: unknown[] }).outgoing).toEqual([]);
+  });
+
   it('ignores a decoded bed shorter than the loop', async () => {
     const h = makeHost({ bazaar: 'bazaar.mp3' }), p = new MusicPlayer(h.host);
     h.host.fetchBuffer.mockImplementation(async () => ({ duration: LOOP_SECONDS - .2 } as AudioBuffer));
