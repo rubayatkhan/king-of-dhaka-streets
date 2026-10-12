@@ -5,6 +5,7 @@ import { GameAudio } from './audio';
 import { STAGES, type Neighborhood } from './campaign';
 import { loadProgress, completeStage, availableStage } from './progress';
 import { sendFeedback, type FeedbackKind } from './feedback';
+import { freshSeed } from './seed';
 
 const $=<T extends HTMLElement=HTMLElement>(s:string)=>document.querySelector<T>(s)!;
 const crown='<svg viewBox="0 0 32 28" fill="none"><path d="m3 7 6 6L16 3l7 10 6-6-4 17H7L3 7Z" stroke="currentColor" stroke-width="2"/><path d="M8 20h16" stroke="currentColor" stroke-width="2"/></svg>';
@@ -80,7 +81,7 @@ function clearInput(){keys.clear();leftHeld=rightHeld=false;desired=steer=0;brak
 async function start(){
  if(!reviewMode&&stageId()>availableStage(save))return;
  if(!world){$('#start').textContent='Opening the street…';return;}
- clearInput();audio.resetRide();lastFailure='';toastPriority=0;toastUntil=feedbackUntil=splashUntil=hornUntil=comboUntil=0;$('#toast').classList.remove('shown');$('#combo').classList.remove('visible');$('#impact').classList.remove('hit');$('#paan-splash').classList.remove('splashed');sim=new Simulation(selected,seed++,lesson);sim.start();screen='playing';ending=false;nextVendor=12;lastDistrict=sim.neighborhood;announceDistrict();
+ clearInput();audio.resetRide();lastFailure='';toastPriority=0;toastUntil=feedbackUntil=splashUntil=hornUntil=comboUntil=0;$('#toast').classList.remove('shown');$('#combo').classList.remove('visible');$('#impact').classList.remove('hit');$('#paan-splash').classList.remove('splashed');sim=new Simulation(selected,reviewMode?seed++:freshSeed(),lesson);sim.start();screen='playing';ending=false;nextVendor=12;lastDistrict=sim.neighborhood;announceDistrict();
  $('#hud').inert=false;$('#menu').classList.add('hidden');$('#overlay').classList.add('hidden');$('#hud').classList.remove('hidden');
  $('#chapter-label').textContent=`${VEHICLES[selected].name} · Mission ${lesson+1}/3`;$('#horn-label').textContent=selected<2?'Bell':'Horn';$('#horn').setAttribute('aria-label',selected<2?'Ring bell':'Sound horn');
  $('#authority-hud').textContent=deference[selected];showToast(`${sim.stage.name} · ${sim.stage.objective}`);
