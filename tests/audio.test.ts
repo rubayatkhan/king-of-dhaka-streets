@@ -411,3 +411,22 @@ it('crowns only the final medal with the crowd shout, audible after the ride has
   audio.setMuted(true); const muted = context.createOscillator.mock.calls.length; audio.medal(true);
   expect(context.createOscillator.mock.calls.length).toBe(muted); expect(speeches().length).toBe(speech + 1);
 });
+
+it('still captions a rickshaw puller\'s call with the sound off, without making a sound', async () => {
+  const audio = await initialized(), captions: string[] = []; audio.onCaption = line => captions.push(line.id);
+  vi.spyOn(Math, 'random').mockReturnValue(.1);
+  audio.setMuted(true); context.currentTime = 5;
+  const before = context.createOscillator.mock.calls.length + context.sources.length;
+  audio.update(10, 'bicycle', true, { neighborhood: 'bazaar', intensity: .5, playerZ: 0, traffic: [{ kind: 'rickshaw', x: 2, z: -5, speed: 3 }] });
+  expect(captions).toEqual(['rickshaw-mama']);
+  expect(context.createOscillator.mock.calls.length + context.sources.length).toBe(before);
+  vi.restoreAllMocks();
+});
+
+it('plays one hear-it preview per tap burst, so mashed taps do not layer', async () => {
+  const audio = await initialized(), count = () => context.createOscillator.mock.calls.length;
+  const start = count(); audio.preview('truck-horn-melody'); const once = count() - start;
+  expect(once).toBeGreaterThan(0);
+  context.currentTime = .1; audio.preview('truck-horn-melody'); expect(count() - start).toBe(once);
+  context.currentTime = .4; audio.preview('truck-horn-melody'); expect(count() - start).toBe(once * 2);
+});

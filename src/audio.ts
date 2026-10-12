@@ -2,7 +2,7 @@
 import { DEFAULT_HORN, HORNS, JUMP_SOUND, SOUNDS, coinRecipe, transpose, type HornId, type Note, type Recipe, type ToneNote } from './soundbank';
 import type { VehicleKind } from './simulation';
 import { asDistrict, streetCue, type Cue } from './soundscape';
-import { MEDAL, type MusicState, type Scene } from './music';
+import { MEDAL, type MusicState } from './music';
 import { MusicPlayer } from './musicplayer';
 import { lineById, linesFor, sanitizeManifest, voiceSource, voiceUrl, type District, type VoiceLine, type VoiceManifest } from './voices';
 export interface StreetAudioContext {
@@ -60,6 +60,7 @@ export class GameAudio {
   private fieldStartedAt = 0;
   private nextStreetSound = 0;
   private lastHorn = -10;
+  private lastPreview = -10;
   private lastImpact = -10;
   private lastJump = -10;
   private lastCoin = -10;
@@ -168,7 +169,6 @@ export class GameAudio {
     this.musicBus?.gain.setTargetAtTime(ctx.currentTime < this.duckUntil ? 0.2 : 0.55, ctx.currentTime, 0.08);
   }
   setMusicOn(on: boolean): void { this.musicOn = on; if (!on) this.music?.stop(); }
-  prepareMusic(scene: Scene): void { this.music?.prepare(scene); }
   /** A dhol flourish for a medal, and the family's crowd shout for the final crown. */
   medal(final: boolean): void {
     if (!this.context || this.muted) return;
@@ -229,7 +229,8 @@ export class GameAudio {
     this.engineOsc?.frequency.setTargetAtTime((/truck/i.test(vehicle) ? 30 : 45) + movement * 75, now, 0.15);
     this.pedal?.gain.setTargetAtTime(cycling ? movement * (0.018 + 0.013 * Math.sin(now * (5 + movement * 8))) : 0, now, 0.025);
     this.pedalOsc?.frequency.setTargetAtTime(85 + movement * 30, now, 0.2);
-    if (playing && now > this.nextStreetSound && now >= this.warningUntil) {
+    // Street cues run with the sound off too: say() captions the puller's call on its own, and cue() only sounds when ready().
+    if (this.active && ctx.state === 'running' && !document.hidden && now > this.nextStreetSound && now >= this.warningUntil) {
       this.nextStreetSound = now + 1.9 - intensity * 1.05 + Math.random() * 1.4;
       this.cue(streetCue({ district, beat: ++this.streetBeat, nearby: cueActors.map(n => ({ kind: n.actor.kind, x: n.actor.x, distance: n.distance })), random: Math.random }));
     }
@@ -285,7 +286,9 @@ export class GameAudio {
 
   /** Plays a bell or horn in the Bazaar, outside a ride. */
   preview(horn: HornId): void {
-    if (this.context && !this.muted && this.context.state === 'running') this.play(HORNS[horn]);
+    if (!this.context || this.muted || this.context.state !== 'running' || this.context.currentTime - this.lastPreview < 0.32) return;
+    this.lastPreview = this.context.currentTime;
+    this.play(HORNS[horn]);
   }
 
   impact(): void {
