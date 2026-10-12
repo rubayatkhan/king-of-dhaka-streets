@@ -372,7 +372,7 @@ export class World {
  render(sim:Simulation,dt:number,steer:number,preview=false){
   const moving=sim.status==='playing'; if(moving||preview)this.clock+=dt; const z=preview?-12:sim.z;
   if(this.currentSimulation!==sim){for(const actor of this.actors.values())disposeModel(actor);this.actors.clear();for(const effect of this.projectiles.values())disposeModel(effect);this.projectiles.clear();for(const m of this.snackModels.values())disposeModel(m);this.snackModels.clear();this.currentSimulation=sim;let palaceDistance=sim.routeLength*.5;for(let d=0;d<sim.routeLength;d+=24)if(sim.neighborhoodAt(d)==='riverfront'){palaceDistance=d+95;break;}this.palace.position.set(pathX(-palaceDistance)+28,0,-palaceDistance);this.camera.position.set(pathX(sim.z)+sim.x*.43,sim.vehicleIndex>=3?4.8:3.2,sim.z+(sim.vehicleIndex>=3?8.5:5.8));}
-  if(this.lastVehicle!==sim.vehicleIndex||this.builtLookKey!==this.lookKey){disposeModel(this.player);this.player=createVehicle(VEHICLES[sim.vehicleIndex].id,VEHICLES[sim.vehicleIndex].color,this.look);this.scene.add(this.player);this.lastVehicle=sim.vehicleIndex;this.builtLookKey=this.lookKey;}
+  if(this.lastVehicle!==sim.vehicleIndex||this.builtLookKey!==this.lookKey){disposeModel(this.player);this.player=createVehicle(VEHICLES[sim.vehicleIndex].id,VEHICLES[sim.vehicleIndex].color,this.look,{player:true});this.scene.add(this.player);this.lastVehicle=sim.vehicleIndex;this.builtLookKey=this.lookKey;}
   this.player.position.set(pathX(z)+sim.x,.025+sim.y,z);this.player.rotation.y=-steer*.17-Math.atan((pathX(z-.2)-pathX(z))/.2);
   animateVehicle(this.player,this.clock,preview?2:sim.speed,steer);
   this.sinceLanding+=dt;this.player.scale.y=landingSquash(this.sinceLanding);

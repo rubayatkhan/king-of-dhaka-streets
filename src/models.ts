@@ -182,7 +182,10 @@ function rickshawArt(theme='birds') {
  }));artMats.set(theme,mat);return mat;
 }
 
-export function createVehicle(kind:string,color=0x2a968c,look:VehicleLook={}):Model {
+/** `player` builds the rider's own model where it differs from traffic (today only the painted Tata truck). */
+export interface VehicleOptions { player?: boolean }
+export function createVehicle(kind:string,color=0x2a968c,look:VehicleLook={},options:VehicleOptions={}):Model {
+ if(kind==='truck'&&options.player)return playerTruck(look);
  // Paint recolours the frame or body; on a rickshaw it recolours the hood instead.
  if(kind!=='rickshaw'&&look.paint!==undefined)color=look.paint;
  const g=new T.Group() as Model; const wheels:T.Group[]=[];g.userData.wheels=wheels;g.userData.kind=kind;
@@ -316,6 +319,109 @@ function truckDecoration(theme='classic'){
   c.font='bold 24px "Noto Sans Bengali","Bangla Sangam MN",sans-serif';c.lineWidth=6;c.strokeText('বাংলাদেশ • ঢাকা',256,114);c.fillStyle='#ffd23f';c.fillText('বাংলাদেশ • ঢাকা',256,114);
   for(const x of [150,362])blossom(c,x,114,8,'#ff5c8a');
  }));truckArts.set(theme,mat);return mat;
+}
+// The player's Tata 1613: yellow round-nosed cab under a painted crown, green-and-yellow body, ধীরে চলুন tailboard.
+const BN='"Noto Sans Bengali","Bangla Sangam MN",sans-serif';
+const truckPaints=new Map<string,T.MeshStandardMaterial>();
+function truckPaint(key:string,w:number,h:number,draw:(c:CanvasRenderingContext2D)=>void,cut=false){
+ const cached=truckPaints.get(key);if(cached)return cached;
+ const mat=textured(canvasTexture(w,h,draw));if(cut){mat.alphaTest=.5;mat.side=T.DoubleSide;}truckPaints.set(key,mat);return mat;
+}
+const shells=new Map<number,T.MeshStandardMaterial>();
+function shell(color:number){let m=shells.get(color);if(!m){m=new T.MeshStandardMaterial({color,roughness:.6,side:T.DoubleSide});shells.set(color,m);}return m;}
+function panel(g:T.Group,mat:T.Material,x:number,y:number,z:number,w:number,h:number,ry=0){const m=new T.Mesh(new T.PlaneGeometry(w,h),mat);m.position.set(x,y,z);m.rotation.y=ry;m.receiveShadow=true;g.add(m);return m;}
+function stripes(c:CanvasRenderingContext2D,x:number,y:number,w:number,h:number){c.save();c.beginPath();c.rect(x,y,w,h);c.clip();c.fillStyle='#fff7e8';c.fillRect(x,y,w,h);c.fillStyle='#d8262e';const s=h*1.5;for(let i=x-h;i<x+w;i+=s){c.beginPath();c.moveTo(i,y+h);c.lineTo(i+h,y);c.lineTo(i+h+s/2,y);c.lineTo(i+s/2,y+h);c.fill();}c.fillStyle=INK;c.fillRect(x,y,w,2);c.fillRect(x,y+h-2,w,2);c.restore();}
+function star(c:CanvasRenderingContext2D,x:number,y:number,r:number){c.beginPath();for(let i=0;i<10;i++){const a=-Math.PI/2+i*Math.PI/5,k=i%2?r*.42:r;c.lineTo(x+Math.cos(a)*k,y+Math.sin(a)*k);}c.closePath();inked(c,'#fff',2);}
+// Body side, top to bottom: flower band, striped rail, green lettered panels.
+function cargoPaint(W:number,H:number,letters:boolean){return (c:CanvasRenderingContext2D)=>{
+ const yb=H*.276,sb=H*.38,n=Math.max(4,Math.round(W/(yb*.95)));
+ c.fillStyle='#f7c51e';c.fillRect(0,0,W,yb);
+ for(let i=0;i<n;i++){const x=i*W/n,cx=x+W/n/2,r=yb*.3;c.fillStyle='#e8592a';c.fillRect(x-3,0,6,yb);leaf(c,cx-r*.9,yb*.62,r*.55,.6);leaf(c,cx+r*.9,yb*.62,r*.55,-.6);blossom(c,cx,yb*.5,r*1.6,i%2?'#2a6fd1':'#e8364f',i%2?'#ffd23f':'#fff3dc',6);}
+ c.fillStyle='#e8592a';c.fillRect(0,0,W,H*.04);c.fillStyle=INK;c.fillRect(0,H*.04,W,2);
+ stripes(c,0,yb,W,sb-yb);
+ c.fillStyle='#1d8a3e';c.fillRect(0,sb,W,H-sb);
+ for(let i=0;i<=n;i++){const x=i*W/n;c.fillStyle='#106328';c.fillRect(x-5,sb,10,H-sb);c.fillStyle='#55c46b';c.fillRect(x+5,sb,3,H-sb);}
+ c.fillStyle='#d8262e';c.fillRect(0,H*.95,W,H*.05);c.fillStyle=INK;c.fillRect(0,H*.95-2,W,2);
+ if(letters){const size=(H-sb)*.66,y=sb+(H*.95-sb)/2;c.font=`bold ${size}px ${BN}`;c.textAlign='center';c.textBaseline='middle';c.lineJoin='round';c.fillStyle='#b81f2a';c.fillText('মায়ের দোয়া',W/2+6,y+6);c.lineWidth=6;c.strokeStyle=INK;c.strokeText('মায়ের দোয়া',W/2,y);c.fillStyle='#fff7e8';c.fillText('মায়ের দোয়া',W/2,y);}
+};}
+// The crown: arched panels over a vine band and a hanging fringe; the cut-out sky is transparent.
+function crownPaint(W:number,H:number,arches:number[][]){return (c:CanvasRenderingContext2D)=>{
+ const band=H*.56,fringe=H*.84;
+ arches.forEach(([x,hw,top],i)=>{
+  for(const [k,fill] of [[0,'#e8592a'],[hw*.1,'#d8262e'],[hw*.2,'#fdf6e3']] as const){c.beginPath();c.moveTo(x-hw+k,band);c.lineTo(x-hw+k,top+hw);c.arc(x,top+hw,hw-k,Math.PI,0);c.lineTo(x+hw-k,band);c.closePath();inked(c,fill,2.5);}
+  const cy=top+hw*1.05,r=hw*.42;
+  if(i===0){c.beginPath();c.arc(x,cy-r*.4,r*.7,0,7);inked(c,'#ffd23f',2);for(let p=0;p<7;p++){const a=Math.PI*(1.1+p*.13);c.beginPath();c.ellipse(x+Math.cos(a)*r*.75,cy+r*.55+Math.sin(a)*r*.75,r*.42,r*.16,a,0,7);inked(c,p%2?'#ff8fb5':'#ff5c8a',1.5);}leaf(c,x-r*1.1,cy+r*.9,r*.5,.3);leaf(c,x+r*1.1,cy+r*.9,r*.5,-.3);}
+  else{leaf(c,x-r*.55,cy+r*.75,r*.55,.9);leaf(c,x+r*.55,cy+r*.75,r*.55,-.9);c.lineWidth=3;c.strokeStyle='#2f8a3e';c.beginPath();c.moveTo(x,cy+r*1.3);c.lineTo(x,cy);c.stroke();for(const [dx,a] of [[-.42,-.5],[0,0],[.42,.5]]){c.beginPath();c.ellipse(x+dx*r,cy-r*.2,r*.32,r*.62,a,0,7);inked(c,i%2?'#e8364f':'#2a6fd1',2);}}
+ });
+ c.fillStyle='#e8592a';c.fillRect(0,band,W,fringe-band);c.fillStyle='#fdf6e3';c.fillRect(0,band+6,W,fringe-band-12);c.fillStyle=INK;c.fillRect(0,band+6,W,2);c.fillRect(0,fringe-8,W,2);
+ const mid=(band+fringe)/2,amp=(fringe-band)*.18;c.lineWidth=3;c.strokeStyle='#2f8a3e';c.beginPath();for(let x=0;x<=W;x+=4)c.lineTo(x,mid+Math.sin(x/W*Math.PI*10)*amp);c.stroke();
+ for(let i=0;i<20;i++){const x=(i+.5)*W/20,y=mid+Math.sin(x/W*Math.PI*10)*amp;if(i%2)leaf(c,x,y-amp,(fringe-band)*.13,.7);else blossom(c,x,y,(fringe-band)*.36,['#e8364f','#2a6fd1','#ff9f1c'][i/2%3],'#ffd23f',6);}
+ for(let x=0;x<W;x+=W/26){c.beginPath();c.arc(x+W/52,fringe,(H-fringe)*.85,0,Math.PI);inked(c,['#e8364f','#ffd23f','#2a6fd1','#2fb5a3'][Math.round(x/(W/26))%4],1.5);}
+};}
+function doorPaint(c:CanvasRenderingContext2D){
+ c.fillStyle='#2a6fd1';c.fillRect(0,0,256,256);c.fillStyle='#8fd3d0';c.fillRect(22,22,212,212);c.beginPath();c.arc(170,80,24,0,7);inked(c,'#ffd23f');
+ c.beginPath();c.moveTo(22,170);c.quadraticCurveTo(90,100,150,160);c.quadraticCurveTo(200,120,234,150);c.lineTo(234,180);c.lineTo(22,180);c.closePath();inked(c,'#2f9a52');
+ c.fillStyle='#2f7fc1';c.fillRect(22,178,212,56);c.beginPath();c.moveTo(70,196);c.quadraticCurveTo(110,222,160,196);c.closePath();inked(c,'#9a5a2a',2.5);c.beginPath();c.moveTo(112,198);c.lineTo(112,140);c.lineTo(146,190);c.closePath();inked(c,'#fff3dc',2);
+ for(const [x,y] of [[22,22],[234,22],[22,234],[234,234]])blossom(c,x,y,24,'#e8364f','#ffd23f',6);c.lineWidth=4;c.strokeStyle=INK;c.strokeRect(22,22,212,212);
+}
+function grillePaint(c:CanvasRenderingContext2D){
+ c.fillStyle='#2b3433';c.fillRect(0,0,256,160);c.strokeStyle='#56615e';c.lineWidth=2;for(let i=0;i<256;i+=10){c.beginPath();c.moveTo(i,0);c.lineTo(i,160);c.stroke();}for(let i=0;i<160;i+=10){c.beginPath();c.moveTo(0,i);c.lineTo(256,i);c.stroke();}
+ for(const s of [-1,1]){c.beginPath();c.ellipse(128+s*48,58,44,36,s*.5,0,7);inked(c,'#2a6fd1',3);c.beginPath();c.ellipse(128+s*40,112,30,24,-s*.4,0,7);inked(c,'#2a6fd1',3);c.beginPath();c.arc(128+s*52,56,14,0,7);inked(c,'#e8364f',2);c.beginPath();c.arc(128+s*40,114,9,0,7);inked(c,'#ffd23f',2);}
+ c.beginPath();c.ellipse(128,86,9,46,0,0,7);inked(c,'#f2efe4',2.5);c.lineWidth=8;c.strokeStyle='#c1c9bc';c.strokeRect(4,4,248,152);
+}
+function starPaint(c:CanvasRenderingContext2D){c.fillStyle='#d6302a';c.fillRect(0,0,128,512);c.fillStyle='#ffd23f';c.fillRect(0,0,10,512);c.fillRect(118,0,10,512);for(const y of [70,300,420])star(c,64,y,40);}
+function playerTruck(look:VehicleLook):Model {
+ const g=new T.Group() as Model,wheels:T.Group[]=[];g.userData.wheels=wheels;g.userData.kind='truck';
+ const cab=look.paint??0xf2b519,bar=0x2e8b6e,glass=0x2d4f55,wood=0x8e4129,trim=0xe2582b,chromeMat=material(chrome,.35);
+ // Big dark tyres with red hubs: singles in front, duals at the back.
+ for(const [x,z] of [[-1,-2.05],[1,-2.05],[-1.02,1.85],[-.66,1.85],[.66,1.85],[1.02,1.85]]){
+  const hub=new T.Group();hub.position.set(x,.54,z);hub.userData.dynamic=true;g.add(hub);wheels.push(hub);
+  const tyre=new T.Mesh(new T.TorusGeometry(.37,.17,8,24),material(0x1d2222));tyre.rotation.y=Math.PI/2;hub.add(tyre);
+  const disc=new T.Mesh(new T.CylinderGeometry(.25,.25,.25,14),material(0xc8302b));disc.rotation.z=Math.PI/2;hub.add(disc);
+  const nut=new T.Mesh(new T.CylinderGeometry(.075,.075,.29,8),chromeMat);nut.rotation.z=Math.PI/2;hub.add(nut);
+  for(let k=0;k<6;k++)for(const s of [-1,1])box(hub,s*.13,Math.sin(k*Math.PI/3)*.15,Math.cos(k*Math.PI/3)*.15,.02,.045,.045,0xf2efe4);
+ }
+ // Chassis, bull bar and the old round Tata nose.
+ for(const s of [-1,1])box(g,s*.45,.72,.05,.16,.2,5.95,ink);box(g,-.98,.82,-.1,.36,.34,.8,0x2b3433);
+ for(const y of [.6,.95])tube(g,[-1.08,y,-3.1],[1.08,y,-3.1],.055,bar);for(const x of [-1.04,-.42,.42,1.04])tube(g,[x,.42,-3.1],[x,1.18,-3.1],.05,bar);for(const s of [-1,1])tube(g,[s*1.08,.6,-3.1],[s*1.08,.6,-2.72],.05,bar);
+ box(g,0,.5,-3.0,2.1,.2,.14,bar);box(g,0,.5,-3.08,.5,.15,.02,0xf2efe4);
+ box(g,0,.9,-2.3,1.5,.5,1.25,cab);const bonnet=new T.Mesh(new T.CylinderGeometry(.75,.75,1.25,20,1,false,Math.PI/2,Math.PI),material(cab));bonnet.rotation.x=Math.PI/2;bonnet.scale.z=.45;bonnet.position.set(0,1.15,-2.3);g.add(bonnet);
+ panel(g,truckPaint('grille',256,160,grillePaint),0,.98,-3.005,.98,.58,Math.PI);
+ for(const s of [-1,1]){
+  const fender=new T.Mesh(new T.CylinderGeometry(.66,.66,.46,14,1,true,0,Math.PI),shell(cab));fender.rotation.z=Math.PI/2;fender.position.set(s*.98,.56,-2.05);g.add(fender);
+  box(g,s*.98,.62,-1.27,.46,.08,.62,ink);sphere(g,s*.72,1.12,-2.9,.1,0xffe9b0);
+  tube(g,[s*1.1,1.9,-1.68],[s*1.22,2.02,-1.8],.02,chrome);box(g,s*1.24,1.9,-1.8,.05,.3,.15,0x25423f);
+ }
+ // Cab with windscreen, side windows and painted doors.
+ box(g,0,1.64,-1.15,2.2,1.38,1.1,cab);box(g,0,.9,-1.15,2.22,.14,1.12,ink);box(g,0,2.36,-1.15,2.24,.06,1.14,trim);
+ box(g,0,1.95,-1.705,1.9,.55,.02,glass);box(g,0,1.95,-1.72,.05,.56,.02,cab);
+ const door=truckPaint('door',256,256,doorPaint);
+ for(const s of [-1,1]){box(g,s*1.1,1.97,-1.0,.02,.42,.55,glass);panel(g,door,s*1.106,1.38,-1.0,.62,.56,s*Math.PI/2);box(g,s*1.105,1.5,-1.55,.02,.95,.12,0xd8262e);}
+ // Painted crown above the cab, with the tarp bundle on the roof.
+ panel(g,truckPaint('crown',1024,336,crownPaint(1024,336,[[512,120,8],[270,104,40],[754,104,40],[80,78,70],[944,78,70]]),true),0,2.85,-1.82,2.32,.95,Math.PI);
+ const side=truckPaint('crown-side',512,256,crownPaint(512,256,[[128,112,8],[384,112,8]]),true);
+ for(const s of [-1,1]){panel(g,side,s*1.15,2.8,-1.2,1.2,.85,s*Math.PI/2);box(g,s*1.15,2.86,-1.82,.08,1,.08,trim);}
+ box(g,0,2.4,-1.88,2.32,.06,.18,0xd8262e);
+ sphere(g,0,2.5,-1.15,1,0x2b3a66,.95,.22,.5);sphere(g,.25,2.62,-1.05,1,0x34477a,.55,.2,.38);tube(g,[-.9,2.52,-1.25],[.9,2.52,-1.25],.02,0xcfbb86,5);
+ // Cargo body: wooden box painted outside, bare planks within.
+ box(g,0,1.16,1.29,2.36,.12,3.62,0x74402a);for(let i=0;i<6;i++)box(g,-1+i*.4,1.225,1.29,.03,.01,3.5,0x3e1d12);
+ box(g,0,1.95,-.5,2.36,1.6,.08,wood);
+ const body=truckPaint('cargo',1024,360,cargoPaint(1024,360,true)),rail=truckPaint('rail',512,32,c=>stripes(c,0,0,512,32)),stars=truckPaint('stars',128,512,starPaint);
+ for(const s of [-1,1]){
+  box(g,s*1.15,1.78,1.29,.06,1.16,3.62,wood);panel(g,body,s*1.181,1.78,1.45,3.3,1.16,s*Math.PI/2);panel(g,stars,s*1.181,1.78,-.36,.32,1.16,s*Math.PI/2);
+  box(g,s*1.2,1.98,1.29,.05,.11,3.68,rail);box(g,s*1.16,2.38,1.29,.1,.05,3.66,trim);
+  for(const y of [2.5,2.66])box(g,s*1.15,y,1.29,.06,.12,3.62,wood);for(let i=0;i<5;i++)box(g,s*1.16,2.52,-.45+i*.88,.08,.32,.07,0x5c2318);
+ }
+ // Tailgate: the ধীরে চলুন board (it follows the Bazaar art theme) on green, under the flower band.
+ box(g,0,1.78,3.07,2.36,1.16,.06,wood);panel(g,truckPaint('cargo-rear',512,256,cargoPaint(512,256,false)),0,1.78,3.106,2.36,1.16);
+ panel(g,truckDecoration(look.art),0,1.5,3.115,1.95,.61);box(g,0,1.98,3.12,2.4,.11,.05,rail);box(g,0,2.38,3.1,2.4,.05,.1,trim);
+ for(const y of [2.5,2.66])box(g,0,y,3.08,2.36,.12,.06,wood);
+ for(const s of [-1,1]){box(g,s*.95,.86,3.1,.24,.15,.05,0xd34730);box(g,s*.95,.72,3.1,.24,.1,.05,0xe7a43b);box(g,s*.84,.42,2.5,.5,.5,.03,0x203733);box(g,s*.84,.28,2.515,.5,.06,.012,0xe2bd7b);}
+ box(g,0,.62,3.05,2.2,.14,.1,ink);box(g,0,.82,3.1,.5,.16,.02,0xf2efe4);
+ if(look.extra==='garland')for(const [z,y] of [[-1.92,2.36],[3.15,2.3]])for(let i=0;i<=16;i++)sphere(g,-1.1+i*2.2/16,y-Math.sin(Math.PI*i/16)*.2,z,.05,i%2?0xff5d8f:0xffd34d);
+ if(look.extra==='streamers')for(const s of [-1,1])for(const [c,dz] of [[0xe8473c,0],[0xf2c12e,.06]] as const){tube(g,[s*1.15,2.72,3.05+dz*.5],[s*1.22,2.1,3.16],.014,c,5);tube(g,[s*1.22,2.02,-1.8+dz],[s*1.24,1.6,-1.7+dz],.012,c,5);}
+ for(const w of wheels)batchVehicleBody(w);
+ batchVehicleBody(g);animateVehicle(g,0,0);return g;
 }
 export function animateVehicle(g:Model,time:number,speed:number,steer=0) {
  const previous=typeof g.userData.animationTime==='number'?g.userData.animationTime:time;
