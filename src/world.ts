@@ -35,7 +35,7 @@ export class World {
  private signs=Array<T.MeshStandardMaterial>(shops.length).fill(signAtlas());private walls:T.MeshStandardMaterial[];
  private scenery:T.Group;private quality='auto';private scale=1;private frameAvg=16;private frames=0;
  private dust:T.Points;private reduced=false;private shakeRemaining=0;private shakeAmplitude=0;private sinceLanding=Infinity;
- private coinMeshes:T.InstancedMesh[]=[];private snackModels=new Map<number,Model>();private dummy=new T.Object3D();private magnetRing!:T.Mesh;
+ private coinMeshes:T.InstancedMesh[]=[];private snackModels=new Map<number,Model>();private dummy=new T.Object3D();private magnetField=new T.Group();private magnetRipples:T.Mesh[]=[];private streaks!:T.InstancedMesh;private haloMaterials=new Map<string,T.SpriteMaterial>();private haloTexture?:T.Texture;
  private look:VehicleLook={};private lookKey='{}';private builtLookKey='';
  constructor(canvas:HTMLCanvasElement){
   this.renderer=new T.WebGLRenderer({canvas,antialias:true,powerPreference:'high-performance'});
@@ -48,7 +48,7 @@ export class World {
   this.scenery=new T.Group();this.scene.add(this.scenery);
   this.makeRoad();
   this.coinMeshes=([1,5] as const).map(v=>{const p=coinParts(v);const m=new T.InstancedMesh(p.geometry,p.materials,256);m.count=0;m.frustumCulled=false;m.castShadow=true;this.scene.add(m);return m;});
-  this.magnetRing=new T.Mesh(new T.TorusGeometry(1.4,.04,6,40),new T.MeshBasicMaterial({color:0xf2c14e,transparent:true,opacity:.55}));this.magnetRing.rotation.x=Math.PI/2;this.magnetRing.visible=false;this.scene.add(this.magnetRing);
+  this.makeMagnetField();this.makeStreaks();
   for(let i=0;i<7;i++){const chunk=this.makeChunk(i,'bazaar');chunk.position.z=-i*48;this.chunks.push(chunk);this.scenery.add(chunk);}
   this.makePalace();this.scene.add(this.palace);
   this.player=createVehicle('bicycle');this.scene.add(this.player);
@@ -376,8 +376,8 @@ export class World {
   this.player.position.set(pathX(z)+sim.x,.025+sim.y,z);this.player.rotation.y=-steer*.17-Math.atan((pathX(z-.2)-pathX(z))/.2);
   animateVehicle(this.player,this.clock,preview?2:sim.speed,steer);
   this.sinceLanding+=dt;this.player.scale.y=landingSquash(this.sinceLanding);
-  this.player.rotation.z=sim.effects.stomach>0&&!this.reduced?Math.sin(this.clock*14)*.08:0;
-  this.magnetRing.visible=sim.effects.magnet>0;this.magnetRing.position.set(pathX(z)+sim.x,.08+sim.y,z);
+  this.player.rotation.z=sim.effects.stomach>0&&!this.reduced?Math.sin(this.clock*11)*.055:0;
+  this.renderMagnet(sim,z);
   if(sim.invulnerable>0)this.player.visible=Math.floor(this.clock*9)%3!==0;else this.player.visible=true;
   for(let i=0;i<this.chunks.length;i++){
    let c=this.chunks[i];let chunkZ=c.position.z;
@@ -424,20 +424,47 @@ export class World {
   this.camera.position.x+=shake.x;this.camera.position.y+=shake.y;this.camera.lookAt(pathX(z-7)+sim.x*.3,large?1.4:1.0,z-9);
   this.camera.fov=(innerHeight>innerWidth?70:58)+(this.reduced?0:Math.min(sim.speed,22)*.2+(sim.effects.boost>0?6:0));this.camera.updateProjectionMatrix();
   this.sun.position.set(pathX(z)-24,36,z+18);this.sun.target.position.set(pathX(z),0,z-12);
-  this.dust.position.set(pathX(z),0,z);this.dust.rotation.y=this.clock*.007;
+  this.renderStreaks(sim);this.dust.position.set(pathX(z),0,z);this.dust.rotation.y=this.clock*.007;
   this.renderer.render(this.scene,this.camera);this.camera.position.copy(cameraBase);
   if(this.quality==='auto'&&dt>0){this.frameAvg=this.frameAvg*.97+dt*1000*.03;if(++this.frames%180===0&&this.frameAvg>24&&this.scale>.7){this.scale=Math.max(.7,this.scale-.1);this.resize();}}
  }
  private renderPickups(sim:Simulation,z:number){
   ([1,5] as const).forEach((value,i)=>{const mesh=this.coinMeshes[i];let n=0;
    for(const coin of sim.coins){if(coin.value!==value||coin.collected||coin.gone||coin.z-z>25||coin.z-z<-110||n>=256)continue;
-    this.dummy.position.set(pathX(coin.z)+coin.x,coin.y,coin.z);this.dummy.rotation.set(0,this.clock*3+coin.id*.4,0);this.dummy.updateMatrix();mesh.setMatrixAt(n++,this.dummy.matrix);}
+    // Coins rock to face the chase camera (so the ৳ stays readable) and a glint ripples down each trail.
+    this.dummy.position.set(pathX(coin.z)+coin.x,coin.y+Math.sin(this.clock*3+coin.id*.7)*.07,coin.z);this.dummy.rotation.set(0,Math.sin(this.clock*2.2+coin.id*.45)*.85,0);this.dummy.updateMatrix();mesh.setMatrixAt(n++,this.dummy.matrix);}
    mesh.count=n;mesh.instanceMatrix.needsUpdate=true;});
   const keep=new Set<number>();
   for(const snack of sim.snacks){if(snack.eaten||snack.z-z>25||snack.z-z<-110)continue;keep.add(snack.id);let model=this.snackModels.get(snack.id);
-   if(!model){model=snackModel(snack.kind);this.snackModels.set(snack.id,model);this.scene.add(model);}
-   model.position.set(pathX(snack.z)+snack.x,.75+Math.sin(this.clock*2.4+snack.id)*.12,snack.z);model.rotation.y=this.clock*1.6;}
+   if(!model){model=snackModel(snack.kind);const halo=new T.Sprite(this.haloMaterial(snack.kind));halo.position.y=snack.kind==='jhalmuri'?.32:snack.kind==='cha'?.2:.1;model.add(halo);model.userData.halo=halo;this.snackModels.set(snack.id,model);this.scene.add(model);}
+   model.position.set(pathX(snack.z)+snack.x,.75+Math.sin(this.clock*2.4+snack.id)*.12,snack.z);model.rotation.y=this.clock*1.6;(model.userData.halo as T.Sprite).scale.setScalar(.95+Math.sin(this.clock*3.2+snack.id)*.07);}
   for(const [id,m] of this.snackModels)if(!keep.has(id)){disposeModel(m);this.snackModels.delete(id);}
+ }
+ // A soft coloured glow behind each snack, shared per kind (sprites are not disposed with the model).
+ private haloMaterial(kind:string){let m=this.haloMaterials.get(kind);if(!m){this.haloTexture??=canvasTexture(64,64,c=>{const g=c.createRadialGradient(32,32,0,32,32,32);g.addColorStop(0,'#ffffffcc');g.addColorStop(.35,'#ffffff66');g.addColorStop(1,'#ffffff00');c.fillStyle=g;c.fillRect(0,0,64,64);});
+  m=new T.SpriteMaterial({map:this.haloTexture,color:({cha:0xffb347,jhalmuri:0xff6a3d,chaap:0x3fe0c5} as Record<string,number>)[kind]??0xffffff,blending:T.AdditiveBlending,depthWrite:false,transparent:true,opacity:.85});this.haloMaterials.set(kind,m);}return m;}
+ // The jhalmuri magnet field: a red-and-gold pole ring at the real pull reach, with ripples drawn inward.
+ private makeMagnetField(){
+  const tex=canvasTexture(256,256,c=>{const g=c.createRadialGradient(128,128,40,128,128,128);g.addColorStop(0,'#ff8a5000');g.addColorStop(.72,'#ffb44a14');g.addColorStop(.93,'#ff8a4a5c');g.addColorStop(1,'#ff8a4a00');c.fillStyle=g;c.fillRect(0,0,256,256);c.lineWidth=7;for(let i=0;i<16;i++){c.strokeStyle=i%2?'#ffd25e':'#ef4a32';c.beginPath();c.arc(128,128,119,i*Math.PI/8+.04,(i+1)*Math.PI/8-.04);c.stroke();}});
+  const disc=new T.Mesh(new T.CircleGeometry(1,48),new T.MeshBasicMaterial({map:tex,transparent:true,depthWrite:false,toneMapped:false}));disc.rotation.x=-Math.PI/2;this.magnetField.add(disc);this.magnetField.userData.disc=disc;
+  for(let i=0;i<2;i++){const ripple=new T.Mesh(new T.RingGeometry(.94,1,48),new T.MeshBasicMaterial({color:0xffd25e,transparent:true,depthWrite:false,toneMapped:false}));ripple.rotation.x=-Math.PI/2;ripple.position.y=.005;this.magnetRipples.push(ripple);this.magnetField.add(ripple);}
+  this.magnetField.visible=false;this.scene.add(this.magnetField);
+ }
+ private renderMagnet(sim:Simulation,z:number){
+  const left=sim.effects.magnet;this.magnetField.visible=left>0&&(left>1.5||Math.floor(this.clock*8)%2===0);if(!this.magnetField.visible)return;
+  this.magnetField.position.set(pathX(z)+sim.x,.06+sim.y,z);this.magnetField.scale.setScalar(sim.magnetReach);(this.magnetField.userData.disc as T.Mesh).rotation.z=this.clock*.5;
+  this.magnetRipples.forEach((ripple,i)=>{const phase=(this.clock*.8+i*.5)%1;ripple.scale.setScalar(1-phase*.7);(ripple.material as T.MeshBasicMaterial).opacity=Math.sin(phase*Math.PI)*.55;});
+ }
+ // Cha speed lines: warm streaks rushing past the camera edges in one instanced draw (off with the gentler camera).
+ private makeStreaks(){
+  this.streaks=new T.InstancedMesh(new T.BoxGeometry(.014,.014,1),new T.MeshBasicMaterial({color:0xffd59a,transparent:true,opacity:0,depthWrite:false,blending:T.AdditiveBlending,fog:false,toneMapped:false}),40);this.streaks.frustumCulled=false;this.streaks.visible=false;this.camera.add(this.streaks);this.scene.add(this.camera);
+ }
+ private renderStreaks(sim:Simulation){
+  const on=sim.effects.boost>0&&!this.reduced;this.streaks.visible=on;if(!on)return;
+  (this.streaks.material as T.MeshBasicMaterial).opacity=Math.min(1,sim.effects.boost)*.42;const spread=Math.tan(T.MathUtils.degToRad(this.camera.fov/2));
+  for(let i=0;i<40;i++){const a=i*2.39996+rand(i)*.3,edge=.62+rand(i+40)*.5,depth=17-((rand(i+80)+this.clock*(1.1+rand(i+120)*.6))%1)*12;
+   this.dummy.position.set(Math.cos(a)*edge*depth*spread*this.camera.aspect,Math.sin(a)*edge*depth*spread,-depth);this.dummy.rotation.set(0,0,0);this.dummy.scale.set(1,1,.8+sim.speed*.07);this.dummy.updateMatrix();this.streaks.setMatrixAt(i,this.dummy.matrix);}
+  this.streaks.instanceMatrix.needsUpdate=true;this.dummy.scale.set(1,1,1);
  }
  private renderProjectiles(sim:Simulation){
   const keep=new Set<number>();

@@ -97,6 +97,8 @@ export class Simulation {
   }
   get airborne(): boolean { return this.airTime >= 0; }
   get repMultiplier(): number { return this.effects.boost > 0 ? 2 : 1; }
+  /** How far the jhalmuri magnet reaches: its pull radius, measured from the rider's collecting edge. */
+  get magnetReach(): number { return this.powerUps.magnetRadius + VEHICLES[this.vehicleIndex].width / 2 + 0.45; }
 
   // A warned bus or truck clears loose coins from its lane so they never lure a rider into it.
   sweepCoins(x: number): void {
@@ -121,7 +123,7 @@ export class Simulation {
       if (ahead < -reachZ - 2 || ahead > 30) continue;
       if (this.effects.magnet > 0 && coin.trail !== 'arc') {
         const gap = Math.hypot(coin.x - this.x, ahead);
-        if (gap > 1e-6 && gap < this.powerUps.magnetRadius + reachX) {
+        if (gap > 1e-6 && gap < this.magnetReach) {
           const pull = Math.min(1, 14 * dt / gap);
           coin.x += (this.x - coin.x) * pull; coin.z += (this.z - coin.z) * pull; coin.y += (COIN_HEIGHT + this.y - coin.y) * pull;
         }

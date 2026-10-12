@@ -38,4 +38,11 @@ describe('street food models', () => {
     for (const [i, kind] of (['cha', 'jhalmuri', 'chaap'] as const).entries()) { expect(models[i].userData.kind).toBe(kind); expect(models[i].children.length).toBeGreaterThan(1); }
     expect(new Set(models.map(m => vertices(m))).size).toBe(3);
   });
+  it('shares every snack material between snacks, so none leaks when a snack is disposed', () => {
+    const materials = (model: Object3D) => { const found = new Set<unknown>(); model.traverse(o => { if (o instanceof Mesh) found.add(o.material); }); return found; };
+    for (const kind of ['cha', 'jhalmuri', 'chaap'] as const) {
+      const first = materials(snackModel(kind)), second = materials(snackModel(kind));
+      expect([...second].every(m => first.has(m))).toBe(true);
+    }
+  });
 });

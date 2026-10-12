@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { JUMPS, Simulation, VEHICLES, type Traffic } from '../src/simulation';
 import { SPEED_CAP } from '../src/campaign';
-import { COIN_HEIGHT, type Coin } from '../src/pickups';
+import { BASE_POWER_UPS, COIN_HEIGHT, type Coin } from '../src/pickups';
 import { powerUpStats } from '../src/economy';
 
 const straight = { steer: 0, brake: false };
@@ -571,6 +571,11 @@ describe('taka and street food', () => {
       advance(sim, 1);
       expect(sim.taka, `magnet ${magnet}`).toBe(magnet ? 1 : 0);
     }
+  });
+
+  it('reports the magnet reach the world draws: pull radius plus the rider half-width', () => {
+    expect(new Simulation(0, 1, 0, { ...BASE_POWER_UPS, magnetRadius: 3 }).magnetReach).toBeCloseTo(3 + 0.68 / 2 + 0.45);
+    expect(new Simulation(4, 1, 0).magnetReach).toBeCloseTo(2 + 2.5 / 2 + 0.45);
   });
 
   it('eats a cha for a speed boost and double street rep', () => {

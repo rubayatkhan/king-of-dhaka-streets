@@ -121,21 +121,64 @@ function rider(parent:T.Group,shirt=0xd99936,z=.1,motor=false,lower=0x294946,acc
   }
   return {g,legs};
 }
+// Rickshaw and truck art painters: flat saturated colour, bold dark outlines and flower borders, as on Dhaka's painted rickshaws.
+const INK='#1c130e';
+function inked(c:CanvasRenderingContext2D,fill:string,width=3){c.fillStyle=fill;c.fill();c.lineWidth=width;c.strokeStyle=INK;c.lineJoin='round';c.stroke();}
+function blossom(c:CanvasRenderingContext2D,x:number,y:number,r:number,petal:string,centre='#ffd23f',n=5){for(let i=0;i<n;i++){const a=i*Math.PI*2/n-Math.PI/2;c.beginPath();c.ellipse(x+Math.cos(a)*r*.55,y+Math.sin(a)*r*.55,r*.5,r*.32,a,0,7);inked(c,petal,1.5);}c.beginPath();c.arc(x,y,r*.28,0,7);inked(c,centre,1.5);}
+function leaf(c:CanvasRenderingContext2D,x:number,y:number,r:number,a:number){c.beginPath();c.ellipse(x,y,r,r*.42,a,0,7);inked(c,'#3fa34d',1.4);}
+// The rear panel is an arch over a rectangle; in canvas space it is a half-ellipse (rx 128, ry 147) on a 256-wide box.
+function archPath(c:CanvasRenderingContext2D,k:number){c.beginPath();c.moveTo(k,256-k);c.lineTo(k,147);c.ellipse(128,147,128-k,147-k,0,Math.PI,0);c.lineTo(256-k,256-k);c.closePath();}
+function archPoints(k:number,step:number){const pts:number[][]=[];for(let y=256-k;y>147;y-=step)pts.push([k,y]);const rx=128-k,ry=147-k,n=Math.round(Math.PI*(rx+ry)/2/step);for(let i=0;i<=n;i++){const a=Math.PI-i*Math.PI/n;pts.push([128+rx*Math.cos(a),147-ry*Math.sin(a)]);}for(let y=147+step;y<=256-k;y+=step)pts.push([256-k,y]);return pts;}
+function peacockBird(c:CanvasRenderingContext2D,x:number,y:number,s:number,dir:number){
+ c.save();c.translate(x,y);c.scale(s*dir,s);
+ for(let i=0;i<7;i++){const a=Math.PI*(.55+i*.13);c.save();c.rotate(a);c.beginPath();c.ellipse(0,46,13,40,0,0,7);inked(c,i%2?'#1f9e8f':'#2a6fd1',2);c.beginPath();c.arc(0,70,8,0,7);inked(c,'#ffd23f',1.5);c.beginPath();c.arc(0,70,4,0,7);inked(c,'#16306e',1);c.restore();}
+ c.beginPath();c.moveTo(-14,26);c.quadraticCurveTo(-22,-8,0,-22);c.quadraticCurveTo(14,-30,12,-48);c.lineTo(22,-50);c.quadraticCurveTo(28,-22,14,-2);c.quadraticCurveTo(18,20,8,30);c.closePath();inked(c,'#1d4fbf',2.5);
+ c.beginPath();c.moveTo(22,-50);c.lineTo(34,-46);c.lineTo(22,-43);c.closePath();inked(c,'#f39a1e',1.5);c.fillStyle='#fff';c.beginPath();c.arc(17,-48,3.4,0,7);c.fill();c.fillStyle=INK;c.beginPath();c.arc(18,-48,1.7,0,7);c.fill();
+ for(const dx of [-6,0,6]){c.lineWidth=1.5;c.strokeStyle=INK;c.beginPath();c.moveTo(16,-54);c.lineTo(16+dx,-66);c.stroke();c.beginPath();c.arc(16+dx,-67,2.6,0,7);inked(c,'#2fb5a3',1);}
+ c.restore();
+}
 const artMats=new Map<string,T.MeshStandardMaterial>();
 function rickshawArt(theme='birds') {
  const cached=artMats.get(theme);if(cached)return cached;
- const mat=textured(canvasTexture(256,256,c=>{
-  c.fillStyle=({birds:'#155748',peacock:'#1d3f7a',tiger:'#2b5d3a',city:'#3a2a5d'} as Record<string,string>)[theme]??'#155748';c.fillRect(0,0,256,256);c.strokeStyle='#ffc758';c.lineWidth=9;c.strokeRect(9,9,238,238);c.strokeStyle='#ed5d3d';c.lineWidth=5;c.strokeRect(22,22,212,212);
-  for(let i=0;i<12;i++){const a=i*Math.PI/6;const x=128+88*Math.cos(a),y=128+88*Math.sin(a);c.fillStyle=i%2?'#f4b73d':'#e86875';c.beginPath();c.ellipse(x,y,13,7,a,0,Math.PI*2);c.fill();}
-  if(theme==='peacock'){for(let i=0;i<9;i++){const a=Math.PI*(1.1+i*.1),x=128+70*Math.cos(a),y=150+70*Math.sin(a);c.fillStyle=i%2?'#2fb5a3':'#3a7bd5';c.beginPath();c.ellipse(x,y,16,30,a+Math.PI/2,0,Math.PI*2);c.fill();c.fillStyle='#f4cf69';c.beginPath();c.arc(x,y,6,0,7);c.fill();}c.fillStyle='#1f6fb2';c.beginPath();c.ellipse(128,150,18,34,0,0,Math.PI*2);c.fill();c.beginPath();c.arc(128,108,12,0,7);c.fill();}
-  else if(theme==='tiger'){c.fillStyle='#f08a24';c.beginPath();c.ellipse(138,135,66,40,0,0,Math.PI*2);c.fill();c.beginPath();c.arc(72,112,26,0,7);c.fill();c.strokeStyle='#1b1b1b';c.lineWidth=6;for(let i=0;i<6;i++){c.beginPath();c.moveTo(100+i*15,100);c.quadraticCurveTo(105+i*15,135,97+i*15,170);c.stroke();}c.fillStyle='#fff';c.beginPath();c.arc(64,106,4,0,7);c.fill();}
-  else if(theme==='city'){c.fillStyle='#f4cf69';c.beginPath();c.arc(185,70,20,0,7);c.fill();for(let i=0;i<8;i++){const h=40+((i*37)%70);c.fillStyle=i%2?'#e86875':'#77c2c2';c.fillRect(40+i*22,190-h,18,h);c.fillStyle='#ffe6a1';for(let w=0;w<3;w++)c.fillRect(44+i*22,198-h+w*14,4,5);}}
-  else{
-   c.fillStyle='#77c2c2';c.beginPath();c.arc(128,122, 61,0,Math.PI*2);c.fill();c.fillStyle='#f4cf69';c.beginPath();c.arc(151,93,17,0,Math.PI*2);c.fill();
-   c.fillStyle='#1e7352';c.beginPath();c.moveTo(65,163);c.quadraticCurveTo(105,100,148,160);c.lineTo(192,161);c.lineTo(192,191);c.lineTo(65,191);c.fill();
-   for(const [x,y,s] of [[104,129,1],[151,142,-1]]){c.save();c.translate(x,y);c.scale(s,1);c.fillStyle='#e45435';c.beginPath();c.ellipse(0,0,16,10,-.2,0,Math.PI*2);c.fill();c.beginPath();c.arc(12,-9,8,0,Math.PI*2);c.fill();c.fillStyle='#ffe7a6';c.beginPath();c.moveTo(17,-10);c.lineTo(28,-7);c.lineTo(17,-4);c.fill();c.fillStyle='#fff';c.beginPath();c.arc(13,-11,2,0,7);c.fill();c.restore();}
+ const ground=({birds:'#16675a',peacock:'#1d3f7a',tiger:'#245e3a',city:'#3a2a5d'} as Record<string,string>)[theme]??'#16675a';
+ const mat=textured(canvasTexture(512,512,c=>{
+  c.scale(2,2);c.fillStyle=ground;c.fillRect(0,0,256,256);
+  archPath(c,5);c.lineWidth=9;c.strokeStyle='#ffc23d';c.stroke();archPath(c,12);c.lineWidth=2.5;c.strokeStyle=INK;c.stroke();archPath(c,38);c.lineWidth=2.5;c.stroke();
+  // Flower vine border between the gold frame and the picture.
+  archPoints(25,22).forEach(([x,y],i)=>{leaf(c,x+7,y-7,6,.8);blossom(c,x,y,10,['#ff5c8a','#fff3dc','#ff9f1c'][i%3],i%3===1?'#e8364f':'#ffd23f');});
+  c.save();archPath(c,39);c.clip();
+  if(theme==='peacock'){
+   const glow=c.createRadialGradient(128,150,10,128,150,110);glow.addColorStop(0,'#3a6fb8');glow.addColorStop(1,ground);c.fillStyle=glow;c.fillRect(0,0,256,256);
+   peacockBird(c,128,168,1.05,1);for(const x of [70,186]){blossom(c,x,214,11,'#ff5c8a');}
+  }else if(theme==='tiger'){
+   c.fillStyle='#2f7a48';c.fillRect(0,190,256,66);for(let i=0;i<9;i++){c.beginPath();c.moveTo(44+i*21,212);c.quadraticCurveTo(50+i*21,180,40+i*21,170);c.lineWidth=4;c.strokeStyle='#4fb35f';c.stroke();}
+   // A Royal Bengal tiger face, front on.
+   for(const s of [-1,1]){c.beginPath();c.arc(128+s*44,98,18,0,7);inked(c,'#f28a1c');c.beginPath();c.arc(128+s*44,100,9,0,7);inked(c,'#f7c6a3',2);}
+   c.beginPath();c.ellipse(128,140,62,54,0,0,7);inked(c,'#f28a1c',3.5);
+   for(const s of [-1,1]){c.beginPath();c.ellipse(128+s*22,166,26,20,0,0,7);inked(c,'#fff6e6',2.5);}
+   c.fillStyle=INK;for(const [x,y,w,h,a] of [[128,96,5,16,0],[114,99,4,12,-.3],[142,99,4,12,.3],[76,132,14,4,.2],[180,132,14,4,-.2],[80,148,12,4,.35],[176,148,12,4,-.35],[84,118,12,4,-.1],[172,118,12,4,.1]]){c.save();c.translate(x,y);c.rotate(a);c.beginPath();c.ellipse(0,0,w,h,0,0,7);c.fill();c.restore();}
+   for(const s of [-1,1]){c.beginPath();c.ellipse(128+s*24,128,12,9,0,0,7);inked(c,'#c8e04a',2.5);c.beginPath();c.arc(128+s*24,128,4.5,0,7);c.fillStyle=INK;c.fill();c.fillStyle='#fff';c.beginPath();c.arc(128+s*24+2,126,1.6,0,7);c.fill();}
+   c.beginPath();c.moveTo(118,150);c.lineTo(138,150);c.lineTo(128,161);c.closePath();inked(c,'#c4505a',2);c.lineWidth=2.5;c.strokeStyle=INK;c.beginPath();c.moveTo(128,161);c.lineTo(128,168);c.moveTo(116,172);c.quadraticCurveTo(128,180,140,172);c.stroke();
+   c.lineWidth=1.5;for(const s of [-1,1])for(let i=0;i<3;i++){c.beginPath();c.moveTo(128+s*34,164+i*5);c.lineTo(128+s*62,158+i*8);c.stroke();}
+  }else if(theme==='city'){
+   const sky=c.createLinearGradient(0,40,0,220);sky.addColorStop(0,'#2a1d52');sky.addColorStop(1,'#7a3a6e');c.fillStyle=sky;c.fillRect(0,0,256,256);
+   c.fillStyle='#fff3c4';for(let i=0;i<14;i++){c.beginPath();c.arc(50+((i*53)%160),60+((i*37)%70),1.6,0,7);c.fill();}
+   c.beginPath();c.arc(184,72,15,0,7);c.fillStyle='#ffe28a';c.fill();c.beginPath();c.arc(191,67,13,0,7);c.fillStyle='#2e2058';c.fill();
+   // Shaheed Minar against a red sun, with the lit city either side.
+   c.beginPath();c.arc(128,150,40,0,7);inked(c,'#e8364f');
+   for(let i=0;i<7;i++){const h=58+((i*29)%46),x=i<3?42+i*20:i===3?0:136+(i-4)*22;if(i===3)continue;c.beginPath();c.rect(x,212-h,18,h);inked(c,['#3f8f9a','#e86875','#f2a33a'][i%3],2);c.fillStyle='#fff1a8';for(let w=0;w<4;w++)c.fillRect(x+4,218-h+w*12,4,5),c.fillRect(x+10,218-h+w*12,4,5);}
+   c.lineWidth=5;c.strokeStyle='#fffaf0';c.lineJoin='miter';c.beginPath();c.moveTo(114,212);c.lineTo(114,128);c.lineTo(128,116);c.lineTo(142,128);c.lineTo(142,212);c.stroke();for(const s of [-1,1]){c.beginPath();c.moveTo(128+s*24,212);c.lineTo(128+s*24,150);c.lineTo(128+s*34,150);c.lineTo(128+s*34,212);c.stroke();}
+   c.fillStyle='#2a6b3d';c.fillRect(0,210,256,46);
+  }else{
+   // A village scene: river, hills, sun, two birds and shapla flowers.
+   c.fillStyle='#8fd3d0';c.fillRect(0,0,256,256);c.beginPath();c.arc(160,100,20,0,7);inked(c,'#ffd23f');
+   c.beginPath();c.moveTo(30,190);c.quadraticCurveTo(90,110,150,180);c.quadraticCurveTo(190,130,240,175);c.lineTo(240,200);c.lineTo(30,200);c.closePath();inked(c,'#2f9a52');
+   c.fillStyle='#2f7fc1';c.fillRect(0,196,256,60);c.lineWidth=2;c.strokeStyle='#bfe8ff';for(let i=0;i<5;i++){c.beginPath();c.moveTo(60+i*30,208+(i%2)*8);c.quadraticCurveTo(70+i*30,203+(i%2)*8,80+i*30,208+(i%2)*8);c.stroke();}
+   for(const [x,y,sc] of [[96,124,1],[152,140,-1]]){c.save();c.translate(x,y);c.scale(sc,1);c.beginPath();c.ellipse(0,0,19,11,-.2,0,7);inked(c,'#e8442c',2.5);c.beginPath();c.moveTo(-6,-4);c.quadraticCurveTo(-2,-26,12,-10);inked(c,'#ff9f1c',2);c.beginPath();c.arc(14,-9,8,0,7);inked(c,'#e8442c',2.5);c.beginPath();c.moveTo(21,-11);c.lineTo(32,-7);c.lineTo(21,-5);c.closePath();inked(c,'#ffd23f',1.5);c.fillStyle='#fff';c.beginPath();c.arc(15,-11,2.6,0,7);c.fill();c.fillStyle=INK;c.beginPath();c.arc(16,-11,1.3,0,7);c.fill();c.restore();}
+   for(const x of [74,182])blossom(c,x,214,12,'#ff8fb5','#ffd23f',8);
   }
-  c.fillStyle='#ffe6a1';c.font='bold 21px sans-serif';c.textAlign='center';c.fillText('ঢাকা',128,220);
+  c.restore();
+  c.beginPath();c.roundRect(98,222,60,19,6);inked(c,'#fff3dc',2);c.fillStyle='#c0392b';c.font='bold 15px "Noto Sans Bengali","Bangla Sangam MN",sans-serif';c.textAlign='center';c.textBaseline='middle';c.fillText('ঢাকা',128,232);
  }));artMats.set(theme,mat);return mat;
 }
 
@@ -168,7 +211,7 @@ export function createVehicle(kind:string,color=0x2a968c,look:VehicleLook={}):Mo
     const chain=new T.Mesh(new T.TorusGeometry(.145,.012,4,16),material(chrome,.5));chain.rotation.y=Math.PI/2;chain.position.set(.08,.43,-.03);g.add(chain);
     tube(g,[.10,.30,-.03],[.10,.37,.8],.01,ink,5);tube(g,[.10,.57,-.03],[.10,.49,.8],.01,ink,5);
     box(g,0,.81,1.055,.08,.12,.025,0xe45633);
-    if(look.extra==='basket'){box(g,0,1.05,-.98,.44,.26,.32,0xb08a4f);for(const s of [-1,1])tube(g,[s*.2,.92,-.9],[s*.2,1.18,-.9],.012,0x8a6a3a);}
+    if(look.extra==='basket'){box(g,0,1.06,-.98,.72,.3,.38,0xc8954f);for(const y of [.98,1.1])box(g,0,y,-.98,.73,.025,.39,0x9a6a32);box(g,0,1.21,-.98,.75,.04,.4,0x8a5a2a);for(const s of [-1,1])tube(g,[s*.33,.92,-.88],[s*.33,1.21,-.88],.012,0x8a6a3a);for(const [x,c] of [[-.26,0xf29a2e],[-.12,0xffd23f],[.13,0xf29a2e],[.27,0xffd23f]])sphere(g,x,1.27,-.98,.075,c);}
   }
   const person=rider(g,look.outfit?.shirt??0xd69d45,rick?-.25:0,motor,look.outfit?.lower,look.outfit?.accent,look.extra==='red-helmet'?0xc8322b:undefined);g.userData.legs=person.legs;g.userData.rider=person.g;
   if(rick){
@@ -257,13 +300,21 @@ function busDecoration(){
 const truckArts=new Map<string,T.MeshStandardMaterial>();
 function truckDecoration(theme='classic'){
  const cached=truckArts.get(theme);if(cached)return cached;
- const mat=textured(canvasTexture(512,160,c=>{
- c.fillStyle=({classic:'#ad6236',rose:'#8a2f4a',peacock:'#1f5f7a'} as Record<string,string>)[theme]??'#ad6236';c.fillRect(0,0,512,160);c.strokeStyle='#f3cd72';c.lineWidth=8;c.strokeRect(6,6,500,148);
- c.fillStyle='#fbe6a9';c.textAlign='center';c.font='bold 44px "Noto Sans Bengali",sans-serif';c.fillText('ধীরে চলুন',256,73);
- c.font='bold 25px "Noto Sans Bengali",sans-serif';c.fillText('বাংলাদেশ • ঢাকা',256,122);
- if(theme==='rose'){for(const x of [47,465]){for(let i=0;i<6;i++){c.fillStyle=i%2?'#f26b8a':'#ffd1dc';c.beginPath();c.arc(x+Math.cos(i)*14,80+Math.sin(i)*14,14,0,7);c.fill();}c.fillStyle='#f4cf69';c.beginPath();c.arc(x,80,9,0,7);c.fill();}}
- else if(theme==='peacock'){for(const x of [47,465])for(let i=0;i<7;i++){const a=Math.PI*(1.15+i*.12);c.fillStyle=i%2?'#2fb5a3':'#f4cf69';c.beginPath();c.ellipse(x+40*Math.cos(a),110+40*Math.sin(a),8,18,a+Math.PI/2,0,7);c.fill();}}
- else for(const x of [47,465]){c.fillStyle='#246e66';c.beginPath();c.ellipse(x,80,23,54,0,0,Math.PI*2);c.fill();c.fillStyle='#eeb950';c.beginPath();c.arc(x,77,14,0,Math.PI*2);c.fill();}
+ const ground=({classic:'#b5502a',rose:'#8a2f4a',peacock:'#1f5f7a'} as Record<string,string>)[theme]??'#b5502a';
+ const mat=textured(canvasTexture(1024,320,c=>{
+  c.scale(2,2);c.fillStyle=ground;c.fillRect(0,0,512,160);
+  // Scalloped petal borders along the top and bottom.
+  for(let i=0;i<26;i++)for(const [y,flip] of [[0,1],[160,-1]] as const){c.beginPath();c.arc(10+i*19.6,y,10,flip>0?0:Math.PI,flip>0?Math.PI:Math.PI*2);inked(c,['#ffd23f','#2fb5a3','#ff5c8a'][i%3],1.5);}
+  c.lineWidth=5;c.strokeStyle='#ffc23d';c.strokeRect(8,16,496,128);c.lineWidth=2;c.strokeStyle=INK;c.strokeRect(13,21,486,118);
+  for(const x of [62,450]){
+   if(theme==='rose'){for(const s of [-1,1])leaf(c,x+s*24,96,14,s*.6+Math.PI/2);for(let i=0;i<6;i++){const a=i*Math.PI/3;c.beginPath();c.arc(x+Math.cos(a)*16,78+Math.sin(a)*16,15,0,7);inked(c,'#e8364f',2);}c.beginPath();c.arc(x,78,20,0,7);inked(c,'#ff5c7a',2);c.lineWidth=2.2;c.strokeStyle=INK;for(let k=0;k<4;k++){c.beginPath();c.arc(x+1,77,4+k*4.5,k*1.6,k*1.6+3.8);c.stroke();}}
+   else if(theme==='peacock')peacockBird(c,x,92,.62,x<256?1:-1);
+   else{c.beginPath();c.arc(x,80,40,0,7);inked(c,'#1f8f7a');c.beginPath();c.arc(x,80,31,0,7);inked(c,'#ffd23f',2);blossom(c,x,80,26,'#ff5c8a','#fff3dc',8);}
+  }
+  c.textAlign='center';c.textBaseline='middle';c.lineJoin='round';
+  c.font='bold 46px "Noto Sans Bengali","Bangla Sangam MN",sans-serif';c.lineWidth=8;c.strokeStyle=INK;c.strokeText('ধীরে চলুন',256,66);c.fillStyle='#fff7e0';c.fillText('ধীরে চলুন',256,66);
+  c.font='bold 24px "Noto Sans Bengali","Bangla Sangam MN",sans-serif';c.lineWidth=6;c.strokeText('বাংলাদেশ • ঢাকা',256,114);c.fillStyle='#ffd23f';c.fillText('বাংলাদেশ • ঢাকা',256,114);
+  for(const x of [150,362])blossom(c,x,114,8,'#ff5c8a');
  }));truckArts.set(theme,mat);return mat;
 }
 export function animateVehicle(g:Model,time:number,speed:number,steer=0) {
@@ -357,19 +408,57 @@ export function roadHazard(kind:'pothole'|'paan',width:number,length:number,seed
  mergeStatic(g);mat.dispose();g.userData.ownedMaterials=[];return g;
 }
 
+// Shiny taka: an embossed ৳ face that also lights itself a little, so coins read in shade and at a distance.
 export function coinParts(value:1|5){
- const r=value===5?.3:.22,geometry=new T.CylinderGeometry(r,r,.06,20);geometry.rotateX(Math.PI/2);
- const face=textured(canvasTexture(64,64,c=>{c.fillStyle=value===5?'#f2c14e':'#d9d2b8';c.fillRect(0,0,64,64);c.fillStyle='#7a5a12';c.font='bold 40px "Noto Sans Bengali",sans-serif';c.textAlign='center';c.textBaseline='middle';c.fillText('৳',32,34);}));
- face.metalness=.5;face.roughness=.35;face.emissive=new T.Color(value===5?0x5a4000:0x3a3a30);
- const rim=new T.MeshStandardMaterial({color:value===5?0xe0a92e:0xb9b39b,metalness:.6,roughness:.3});
+ const gold=value===5,r=gold?.34:.27,geometry=new T.CylinderGeometry(r,r,.075,28);geometry.rotateX(Math.PI/2);
+ const tex=canvasTexture(128,128,c=>{
+  const shine=c.createRadialGradient(44,38,4,64,64,66);shine.addColorStop(0,gold?'#fff4b8':'#fffaea');shine.addColorStop(.45,gold?'#f6c443':'#e2d6ae');shine.addColorStop(1,gold?'#c98614':'#a8935c');c.fillStyle=shine;c.fillRect(0,0,128,128);
+  c.lineWidth=8;c.strokeStyle=gold?'#b47718':'#968a62';c.beginPath();c.arc(64,64,57,0,7);c.stroke();c.lineWidth=2.5;c.strokeStyle=gold?'#ffe593':'#fffaf0';c.beginPath();c.arc(64,64,49,0,7);c.stroke();
+  if(gold)for(let i=0;i<18;i++){const a=i*Math.PI/9;c.fillStyle='#a86d10';c.beginPath();c.arc(64+43*Math.cos(a),64+43*Math.sin(a),2.6,0,7);c.fill();}
+  c.translate(64,64);c.rotate(-Math.PI/2);c.translate(-64,-64);
+  c.font=`bold ${gold?62:70}px "Noto Sans Bengali","Bangla Sangam MN",sans-serif`;c.textAlign='center';c.textBaseline='middle';
+  c.fillStyle=gold?'#fff3c0':'#ffffff';c.fillText('৳',66,70);c.fillStyle=gold?'#7a4706':'#5f5530';c.fillText('৳',63,67);
+ });
+ const face=new T.MeshStandardMaterial({map:tex,emissiveMap:tex,emissive:0xffffff,emissiveIntensity:gold?.45:.4,metalness:.35,roughness:.3});
+ const rim=new T.MeshStandardMaterial({color:gold?0xe9ad34:0xcdc29a,emissive:gold?0x4a3000:0x2c2a20,metalness:.55,roughness:.28});
  return {geometry,materials:[rim,face,face] as T.Material[]};
 }
+// Street food is shared-material only: snacks come and go all ride, so nothing here may allocate a material per snack.
+const glassMaterial=new T.MeshStandardMaterial({color:0xf2fbf7,roughness:.05,transparent:true,opacity:.34,depthWrite:false});
+const steamMaterial=new T.MeshBasicMaterial({color:0xffffff,transparent:true,opacity:.55,depthWrite:false});
+const paperMaterial=new T.MeshStandardMaterial({color:0xdcd8c8,roughness:.95,side:T.DoubleSide});
+function curl(g:T.Group,points:number[][],r:number,m:T.Material){const mesh=new T.Mesh(new T.TubeGeometry(new T.CatmullRomCurve3(points.map(p=>new T.Vector3(...p as [number,number,number]))),14,r,5),m);g.add(mesh);return mesh;}
 export function snackModel(kind:'cha'|'jhalmuri'|'chaap'):Model{
  const g=new T.Group() as Model;g.userData.kind=kind;
- if(kind==='cha'){const glass=new T.Mesh(new T.CylinderGeometry(.13,.1,.26,14),new T.MeshStandardMaterial({color:0xc8741f,roughness:.25,transparent:true,opacity:.9}));glass.position.y=.13;g.add(glass);box(g,0,.015,0,.38,.03,.38,0xf3ead2);sphere(g,0,.3,0,.07,0xfff7e0,1,.4,1);}
- else if(kind==='jhalmuri'){const cone=new T.Mesh(new T.ConeGeometry(.16,.42,14),material(0xe9dcb8));cone.rotation.x=Math.PI;cone.position.y=.21;g.add(cone);for(let i=0;i<7;i++)sphere(g,Math.cos(i)*.08,.44+(i%3)*.03,Math.sin(i)*.08,.045,i%2?0xd9a441:0x6e9a3d);}
- else{const plate=new T.Mesh(new T.CylinderGeometry(.24,.2,.04,18),material(0xf2f0e6));g.add(plate);for(let i=0;i<4;i++)sphere(g,-.12+i*.08,.07,(i%2)*.05-.02,.07,0x8a4b23,1.2,.6,1);tube(g,[-.18,.14,0],[.2,.14,0],.012,0x8a6a3a);}
- g.scale.setScalar(1.8);return g;
+ if(kind==='cha'){
+  // Milky cha in a small clear glass on a saucer, with two curls of steam.
+  const saucer=new T.Mesh(new T.CylinderGeometry(.21,.16,.03,22),material(0xf6f1e4,.4));saucer.position.y=.015;g.add(saucer);
+  const tea=new T.Mesh(new T.CylinderGeometry(.098,.078,.2,16),material(0xc98b4e,.45));tea.position.y=.13;g.add(tea);
+  const foam=new T.Mesh(new T.CylinderGeometry(.099,.099,.014,16),material(0xf0d9a8,.6));foam.position.y=.235;g.add(foam);
+  const glass=new T.Mesh(new T.CylinderGeometry(.112,.088,.26,16,1,true),glassMaterial);glass.position.y=.16;g.add(glass);
+  const lip=new T.Mesh(new T.TorusGeometry(.112,.007,4,20),material(0xffffff,.2));lip.rotation.x=Math.PI/2;lip.position.y=.29;g.add(lip);
+  curl(g,[[-.03,.31,0],[-.07,.38,0],[-.01,.45,0],[-.05,.53,0]],.014,steamMaterial);curl(g,[[.04,.31,.01],[.07,.37,.01],[.03,.43,.01],[.07,.49,.01]],.011,steamMaterial);
+ } else if(kind==='jhalmuri'){
+  // A newspaper cone heaped with puffed rice, chilli, onion and coriander, and a card scoop.
+  // Newsprint needs a canvas, so it is drawn once in the browser and shared (tests build the model without one).
+  if(!paperMaterial.map&&typeof document!=='undefined'){paperMaterial.map=canvasTexture(128,128,c=>{c.fillStyle='#ebe7d9';c.fillRect(0,0,128,128);c.fillStyle='#c0392b';c.fillRect(0,4,128,9);c.fillStyle='#3f3c36';c.fillRect(8,20,70,7);for(let y=34;y<124;y+=7)for(let x=6;x<124;){const w=8+Math.abs(Math.sin(x*12.99+y*78.23))*22;c.fillStyle=y%3?'#77736a':'#5d5950';c.fillRect(x,y,w,3);x+=w+4;}});paperMaterial.color.set(0xffffff);paperMaterial.needsUpdate=true;}
+  const cone=new T.Mesh(new T.ConeGeometry(.17,.4,16,1,true),paperMaterial);cone.rotation.x=Math.PI;cone.position.y=.2;g.add(cone);
+  const band=new T.Mesh(new T.TorusGeometry(.168,.013,4,22),material(0xd9472f));band.rotation.x=Math.PI/2;band.position.y=.395;g.add(band);
+  sphere(g,0,.41,0,.155,0xe8cf98,1,.55,1);
+  for(let i=0;i<26;i++){const a=i*2.4,d=.02+(i%5)*.025;sphere(g,Math.cos(a)*d,.452+(.12-d)*.3,Math.sin(a)*d,.017+(i%3)*.004,[0xf6e7bf,0xd8352a,0x3f9b35,0xf6e7bf,0xb46a9a,0xc9874a][i%6]);}
+  tube(g,[-.11,.46,.0],[-.01,.5,.08],.013,0x2f8a2b,5);box(g,.07,.52,-.02,.09,.16,.012,0xd9b77d).rotation.z=-.35;
+ } else {
+  // Grilled chaap on a skewer over a steel plate, with cucumber, onion and lemon.
+  const plate=new T.Mesh(new T.CylinderGeometry(.26,.21,.035,26),material(0xdfe4e0,.3));plate.position.y=.017;g.add(plate);
+  const rim=new T.Mesh(new T.TorusGeometry(.245,.012,4,28),material(0xc5ccc8,.25));rim.rotation.x=Math.PI/2;rim.position.y=.04;g.add(rim);
+  const paratha=new T.Mesh(new T.CylinderGeometry(.17,.17,.018,20),material(0xe7c27a));paratha.position.set(-.05,.045,-.04);paratha.scale.z=.8;g.add(paratha);
+  tube(g,[-.27,.1,.02],[.28,.1,.02],.011,0xc9a26b);
+  for(let i=0;i<3;i++){const x=-.13+i*.13;box(g,x,.1,.02,.11,.045,.15,0xa5481e).rotation.y=(i-1)*.18;for(const dz of [-.04,0,.04])tube(g,[x-.05,.124,.02+dz],[x+.05,.124,.02+dz+.015],.006,0x4a2410,4);}
+  for(const [x,z] of [[-.1,.13],[.06,.15]]){const slice=new T.Mesh(new T.CylinderGeometry(.045,.045,.012,14),material(0xbfdc8a));slice.position.set(x,.045,z);g.add(slice);const skin=new T.Mesh(new T.TorusGeometry(.045,.006,4,14),material(0x2f7d32));skin.rotation.x=Math.PI/2;skin.position.set(x,.05,z);g.add(skin);}
+  const onion=new T.Mesh(new T.TorusGeometry(.05,.009,4,16),material(0xd9a3c6));onion.rotation.x=Math.PI/2;onion.position.set(.13,.05,-.13);g.add(onion);
+  sphere(g,-.13,.06,-.12,.05,0xf2d43a,1,.6,.7);
+ }
+ mergeStatic(g);g.scale.setScalar(2.1);return g;
 }
 
 /** Dispose model-owned geometry while retaining shared primitive geometry and materials. */
