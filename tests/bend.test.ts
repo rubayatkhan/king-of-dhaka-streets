@@ -47,9 +47,13 @@ describe('bending street blocks onto the curving road', () => {
     for (const m of g.children as T.Mesh[]) expect(m.geometry.getAttribute('position').getX(0)).toBeCloseTo(0.5 + pathX(4 - 772), 5);
   });
 
-  it('finishes a block at once when it is about to come into view', () => {
-    const bender = new ChunkBender(clock()), g = chunk(5);
-    bender.queue(g); bender.finish(g);
-    expect(bender.pending(g)).toBe(false); expect(g.visible).toBe(true);
+  it('slices one huge merged mesh across frames, a few thousand vertices at a time', () => {
+    const bender = new ChunkBender(clock()), g = new T.Group(); g.position.z = -100;
+    const big = new T.Mesh(new T.PlaneGeometry(4, 40, 4, 4000)); g.add(big); // ~20k vertices, like a merged street block
+    bender.queue(g);
+    let frames = 0; while (bender.pending(g) && frames < 50) { bender.work(3); frames++; }
+    expect(frames).toBeGreaterThan(2); expect(bender.pending(g)).toBe(false);
+    const p = big.geometry.getAttribute('position'), last = p.count - 1, straight = big.userData.straightPositions as Float32Array;
+    expect(p.getX(last)).toBeCloseTo(straight[last * 3] + pathX(straight[last * 3 + 2] - 100), 5);
   });
 });

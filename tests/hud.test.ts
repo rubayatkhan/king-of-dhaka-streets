@@ -24,7 +24,7 @@ describe('the race bar', () => {
   it('switches to an encouraging finish line once the gold time has gone, never a failure', () => {
     const r = ride(500, 90);
     expect(r.pace).toBe(1); expect(r.goldSecondsLeft).toBe(0); expect(r.goldGone).toBe(true); expect(r.ahead).toBe(false);
-    expect(r.clockLabel).toBe('Finish for the stars');
+    expect(r.clockLabel).toBe('Finish for ★'); // as short as the countdown it replaces, so it fits a small landscape phone
     expect(r.clockLabel).not.toMatch(/fail|lost|late|over/i);
   });
   it('clamps a distance beyond the route to the finish flag', () => {

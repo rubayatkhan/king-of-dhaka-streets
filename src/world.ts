@@ -5,6 +5,8 @@ import {SHAKE_SECONDS,landingSquash,magnetOpacity,shakeOffset} from './feel';
 import {ChunkBender,pathX} from './bend';
 
 export {pathX};
+// The player's Tata wears a tall painted crown, so its chase camera rides higher to keep the road ahead in view.
+const chaseHeight=(vehicle:number)=>vehicle===4?5.4:vehicle===3?4.8:3.2;
 const facades=[0xd99570,0xe8c28c,0xc98591,0x65aaa0,0xe0a48b,0xb5c7bb];
 const pennants=[0xe7704c,0x32a08d,0xf0bd51].map(color=>new T.MeshStandardMaterial({color,side:T.DoubleSide}));
 type Neighborhood='riverfront'|'bazaar'|'boulevard';
@@ -38,7 +40,7 @@ export class World {
  private dust:T.Points;private reduced=false;private shakeRemaining=0;private shakeAmplitude=0;private sinceLanding=Infinity;
  private coinMeshes:T.InstancedMesh[]=[];private snackModels=new Map<number,Model>();private dummy=new T.Object3D();private magnetField=new T.Group();private magnetRipples:T.Mesh[]=[];private streaks!:T.InstancedMesh;private haloMaterials=new Map<string,T.SpriteMaterial>();private haloTexture?:T.Texture;
  // Each district's seven street blocks are built once (ahead of time when the garage is idle) and swapped in, never rebuilt mid-ride.
- private pools:Record<Neighborhood,(T.Group|undefined)[]>={bazaar:[],riverfront:[],boulevard:[]};private bender=new ChunkBender();private lastRideFrame=-Infinity;private warmed=false;
+ private pools:Record<Neighborhood,(T.Group|undefined)[]>={bazaar:[],riverfront:[],boulevard:[]};private bender=new ChunkBender();private lastRideFrame=-Infinity;private lastInput=-Infinity;private warmed=false;
  private look:VehicleLook={};private lookKey='{}';private builtLookKey='';
  constructor(canvas:HTMLCanvasElement){
   this.renderer=new T.WebGLRenderer({canvas,antialias:true,powerPreference:'high-performance'});
@@ -57,6 +59,8 @@ export class World {
   this.player=createVehicle('bicycle');this.scene.add(this.player);
   const dustPos=[];for(let i=0;i<85;i++)dustPos.push((rand(i+801)-.5)*24,rand(i+802)*8, -rand(i+803)*65);
   const dg=new T.BufferGeometry();dg.setAttribute('position',new T.Float32BufferAttribute(dustPos,3));this.dust=new T.Points(dg,new T.PointsMaterial({color:0xffe7af,size:.06,transparent:true,opacity:.48,depthWrite:false}));this.scene.add(this.dust);
+  // A tap or key usually starts or resumes a ride, so warm-up keeps clear of fresh input as well as of riding.
+  for(const type of ['pointerdown','keydown'])addEventListener(type,()=>{this.lastInput=performance.now();},{capture:true,passive:true});
   this.resize();this.scheduleWarmUp();
  }
  private makeRoad(){
@@ -86,9 +90,9 @@ export class World {
  // Builds one missing block per idle moment outside a ride, then compiles every shader the ride will need, so a
  // district change or the first frame never stalls on building geometry or compiling programs.
  private scheduleWarmUp(){
-  if(this.warmed)return;const later=(f:()=>void)=>'requestIdleCallback' in globalThis?requestIdleCallback(f,{timeout:1500}):setTimeout(f,120);
+  if(this.warmed)return;const later=(f:()=>void)=>'requestIdleCallback' in globalThis?requestIdleCallback(f,{timeout:1500}):setTimeout(f,400);
   later(()=>{
-   if(performance.now()-this.lastRideFrame<1000){setTimeout(()=>this.scheduleWarmUp(),1000);return;}
+   const now=performance.now();if(now-this.lastRideFrame<1000||now-this.lastInput<1500){setTimeout(()=>this.scheduleWarmUp(),1000);return;}
    const missing=(['riverfront','boulevard','bazaar'] as Neighborhood[]).flatMap(d=>Array.from({length:7},(_,slot)=>[d,slot] as const)).find(([d,slot])=>!this.pools[d][slot]);
    if(missing){this.pooled(missing[1],missing[0]);this.scheduleWarmUp();return;}
    this.warmed=true;this.compileAll();
@@ -98,7 +102,7 @@ export class World {
   const extras:T.Object3D[]=[];
   for(const d of Object.keys(this.pools) as Neighborhood[])for(const c of this.pools[d])if(c&&!c.parent){this.scenery.add(c);extras.push(c);}
   const hidden=this.scenery.children.filter(c=>!c.visible);hidden.forEach(c=>c.visible=true);
-  const samples=(['bus','truck','cng','car','rickshaw','bicycle','motorbike'] as const).map(k=>createVehicle(k,0x378e84));samples.push(pedestrian(0xd2ba8b,1,true),seatedCow(1),roadHazard('pothole',1.6,1.4,1),roadHazard('paan',1.6,1.4,2));
+  const samples=(['bus','truck','cng','car','rickshaw','bicycle','motorbike'] as const).map(k=>createVehicle(k,0x378e84));samples.push(createVehicle('truck',VEHICLES[4].color,{},{player:true}),pedestrian(0xd2ba8b,1,true),seatedCow(1),roadHazard('pothole',1.6,1.4,1),roadHazard('paan',1.6,1.4,2));
   samples.forEach(m=>this.scene.add(m));
   this.renderer.compile(this.scene,this.camera);
   samples.forEach(m=>disposeModel(m));extras.forEach(c=>this.scenery.remove(c));hidden.forEach(c=>c.visible=false);
@@ -382,7 +386,7 @@ export class World {
  resize(){const w=innerWidth,h=innerHeight;this.camera.aspect=w/h;this.camera.updateProjectionMatrix();const cap=this.quality==='high'?1.65:this.quality==='low'?.85:1.25;this.renderer.setPixelRatio(Math.min(devicePixelRatio,cap)*this.scale);this.renderer.setSize(w,h,false);}
  render(sim:Simulation,dt:number,steer:number,preview=false){
   const moving=sim.status==='playing'; if(moving||preview)this.clock+=dt; const z=preview?-12:sim.z;
-  if(this.currentSimulation!==sim){for(const actor of this.actors.values())disposeModel(actor);this.actors.clear();for(const effect of this.projectiles.values())disposeModel(effect);this.projectiles.clear();for(const m of this.snackModels.values())disposeModel(m);this.snackModels.clear();this.currentSimulation=sim;let palaceDistance=sim.routeLength*.5;for(let d=0;d<sim.routeLength;d+=24)if(sim.neighborhoodAt(d)==='riverfront'){palaceDistance=d+95;break;}this.palace.position.set(pathX(-palaceDistance)+28,0,-palaceDistance);this.camera.position.set(pathX(sim.z)+sim.x*.43,sim.vehicleIndex>=3?4.8:3.2,sim.z+(sim.vehicleIndex>=3?8.5:5.8));}
+  if(this.currentSimulation!==sim){for(const actor of this.actors.values())disposeModel(actor);this.actors.clear();for(const effect of this.projectiles.values())disposeModel(effect);this.projectiles.clear();for(const m of this.snackModels.values())disposeModel(m);this.snackModels.clear();this.currentSimulation=sim;let palaceDistance=sim.routeLength*.5;for(let d=0;d<sim.routeLength;d+=24)if(sim.neighborhoodAt(d)==='riverfront'){palaceDistance=d+95;break;}this.palace.position.set(pathX(-palaceDistance)+28,0,-palaceDistance);this.camera.position.set(pathX(sim.z)+sim.x*.43,chaseHeight(sim.vehicleIndex),sim.z+(sim.vehicleIndex>=3?8.5:5.8));}
   if(this.lastVehicle!==sim.vehicleIndex||this.builtLookKey!==this.lookKey){disposeModel(this.player);this.player=createVehicle(VEHICLES[sim.vehicleIndex].id,VEHICLES[sim.vehicleIndex].color,this.look,{player:true});this.scene.add(this.player);this.lastVehicle=sim.vehicleIndex;this.builtLookKey=this.lookKey;}
   this.player.position.set(pathX(z)+sim.x,.025+sim.y,z);this.player.rotation.y=-steer*.17-Math.atan((pathX(z-.2)-pathX(z))/.2);
   animateVehicle(this.player,this.clock,preview?2:sim.speed,steer);
@@ -431,7 +435,7 @@ export class World {
   }
   for(const [id,m] of this.actors)if(!keep.has(id)){disposeModel(m);this.actors.delete(id);}
   this.renderProjectiles(sim);this.renderPickups(sim,z);
-  const large=sim.vehicleIndex>=3;const camX=pathX(z)+sim.x*.43;const target=new T.Vector3(camX,large?4.8:3.2,z+(large?8.5:5.8));
+  const large=sim.vehicleIndex>=3;const camX=pathX(z)+sim.x*.43;const target=new T.Vector3(camX,chaseHeight(sim.vehicleIndex),z+(large?8.5:5.8));
   if(preview)target.set(pathX(z)+5,4.5,z+7);
   this.camera.position.lerp(target,1-Math.exp(-dt*7));const cameraBase=this.camera.position.clone();
   this.shakeRemaining=Math.max(0,this.shakeRemaining-dt);const shake=shakeOffset(this.shakeRemaining,this.shakeAmplitude,this.clock,this.reduced);

@@ -9,7 +9,7 @@ export function raceBar({ distance, routeLength, elapsed, parTime }: RaceInput):
   const covered = routeLength > 0 ? unit(distance / routeLength) : 1, pace = parTime > 0 ? unit(elapsed / parTime) : 1;
   const metresLeft = Math.ceil(Math.max(0, routeLength - distance)), goldSecondsLeft = Math.ceil(Math.max(0, parTime - elapsed)), goldGone = goldSecondsLeft === 0;
   return { covered, pace, metresLeft, goldSecondsLeft, goldGone, ahead: !goldGone && covered >= pace,
-    distanceLabel: metresLeft ? `${metresLeft} m to go` : 'Finish line!', clockLabel: goldGone ? 'Finish for the stars' : `${goldSecondsLeft} s for gold` };
+    distanceLabel: metresLeft ? `${metresLeft} m to go` : 'Finish line!', clockLabel: goldGone ? 'Finish for ★' : `${goldSecondsLeft} s for gold` };
 }
 
 export function heartsLabel(health: number): string {

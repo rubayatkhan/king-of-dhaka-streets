@@ -81,8 +81,8 @@ describe('street food effects', () => {
 
 const lcg = (seed: number) => { let s = seed >>> 0 || 1; return () => (s = (Math.imul(s, 1664525) + 1013904223) >>> 0) / 4294967296; };
 function placed(vehicle: number, lesson: number, seed: number) {
-  const sim = new Simulation(vehicle, seed, lesson), jump = JUMPS[VEHICLES[vehicle].id];
-  return { sim, ...placePickups({ traffic: sim.traffic, routeLength: sim.routeLength, startSpeed: sim.maxSpeed,
+  const sim = new Simulation(vehicle, seed, lesson), rider = VEHICLES[vehicle], jump = JUMPS[rider.id];
+  return { sim, rider, ...placePickups({ traffic: sim.traffic, routeLength: sim.routeLength, startSpeed: sim.maxSpeed, riderHalfWidth: rider.width / 2, riderLength: rider.length,
     arcHeight: jump.height, arcClears: jump.clears.filter(k => k !== 'splash'), random: lcg(seed) }) };
 }
 const groups = <T extends { group: number }>(items: T[]) => [...new Map(items.map(i => [i.group, items.filter(j => j.group === i.group)])).values()];
@@ -110,11 +110,11 @@ describe('coin trails and snack placement', () => {
   });
   it('never puts a ground coin where an obstacle will be as the rider arrives, and keeps coins on the road', () => {
     for (let stage = 0; stage < 15; stage++) for (let seed = 1; seed <= 6; seed++) {
-      const { sim, coins } = placed(Math.floor(stage / 3), stage % 3, seed);
+      const { sim, rider, coins } = placed(Math.floor(stage / 3), stage % 3, seed);
       for (const c of coins) {
         expect(Math.abs(c.x)).toBeLessThanOrEqual(4.3);
         expect(-c.z).toBeGreaterThan(30); expect(-c.z).toBeLessThan(sim.routeLength - 20);
-        if (c.trail !== 'arc') expect(coinIsClear(sim.traffic, c.x, c.z, sim.maxSpeed), `stage ${stage} seed ${seed} coin ${c.id}`).toBe(true);
+        if (c.trail !== 'arc') expect(coinIsClear(sim.traffic, c.x, c.z, sim.maxSpeed, rider.width / 2, rider.length), `stage ${stage} seed ${seed} coin ${c.id}`).toBe(true);
       }
     }
   });

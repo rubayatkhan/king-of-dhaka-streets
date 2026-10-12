@@ -34,7 +34,7 @@ const districts:Record<Neighborhood,{name:string;bangla:string;tag:string}>={baz
 const deference=['Find your own gap','A little room for a rickshaw','Small traffic starts to yield','Your presence opens a lane','The city makes way for the king'];
 const audio=new GameAudio();audio.setMuted(save.muted);
 let leftHeld=false,rightHeld=false;
-let steer=0,brake=false,desired=0,accumulator=0,last=performance.now(),screen='menu',toastUntil=0,feedbackUntil=0,nudgeUntil=0,seed=27,ending=false,nextVendor=12,splashUntil=0,hornUntil=0,comboUntil=0,districtUntil=0,lastDistrict:Neighborhood=sim.neighborhood,toastPriority=0,lastFailure='';
+let steer=0,brake=false,desired=0,accumulator=0,last=performance.now(),screen='menu',toastUntil=0,feedbackUntil=0,nudgeUntil=0,seed=27,ending=false,nextVendor=12,splashUntil=0,swerveUntil=0,hornUntil=0,comboUntil=0,districtUntil=0,lastDistrict:Neighborhood=sim.neighborhood,toastPriority=0,lastFailure='';
 const chipKinds=[['cha','☕','Cha speed'],['magnet','🧲','Taka magnet'],['belly','🍢','Full belly'],['stomach','🤢','পেট গুড়গুড়!']] as const;
 const keys=new Set<string>();const swipe=new SwipeRecognizer(innerWidth);
 let renderDirty=true,renderedSimulation:Simulation|undefined,renderedStatus='';
@@ -95,7 +95,7 @@ function clearInput(){keys.clear();swipe.clear();leftHeld=rightHeld=false;desire
 async function start(){
  if(!reviewMode&&stageId()>availableStage(save))return;
  if(!world){$('#start').textContent='Opening the street…';return;}
- clearInput();audio.resetRide();lastFailure='';toastPriority=0;toastUntil=feedbackUntil=splashUntil=hornUntil=comboUntil=0;$('#toast').classList.remove('shown');$('#combo').classList.remove('visible');$('#impact').classList.remove('hit');$('#paan-splash').classList.remove('splashed');world.setLook(vehicleLook(save,VEHICLES[selected].id));sim=new Simulation(selected,reviewMode?seed++:freshSeed(),lesson,powerUpStats(save.upgrades));sim.start();screen='playing';ending=false;nextVendor=12;lastDistrict=sim.neighborhood;announceDistrict();
+ clearInput();audio.resetRide();lastFailure='';toastPriority=0;toastUntil=feedbackUntil=splashUntil=swerveUntil=hornUntil=comboUntil=0;$('#toast').classList.remove('shown');$('#combo').classList.remove('visible');$('#impact').classList.remove('hit');$('#paan-splash').classList.remove('splashed');world.setLook(vehicleLook(save,VEHICLES[selected].id));sim=new Simulation(selected,reviewMode?seed++:freshSeed(),lesson,powerUpStats(save.upgrades));sim.start();screen='playing';ending=false;nextVendor=12;lastDistrict=sim.neighborhood;announceDistrict();
  $('#hud').inert=false;$('#menu').classList.add('hidden');$('#overlay').classList.add('hidden');$('#hud').classList.remove('hidden');
  $('#race-marker').innerHTML=vehicleIcon(selected);$('#hud').classList.toggle('calm',calm());$('#horn-label').textContent=selected<2?'Bell':'Horn';$('#horn').setAttribute('aria-label',selected<2?'Ring bell':'Sound horn');
  $('#authority-hud').textContent=deference[selected];showToast(`${sim.stage.name} · ${sim.stage.objective}`);
@@ -206,14 +206,15 @@ function frame(now:number){const dt=Math.min((now-last)/1000,.05);last=now;
  if(sim.status==='playing'&&sim.neighborhood!==lastDistrict){lastDistrict=sim.neighborhood;announceDistrict();}
  if(now>districtUntil||rear)$('#district-banner').classList.remove('visible');
  $('#rear-alert').classList.toggle('hidden',!rear||sim.status!=='playing');
- if(rear){$('#rear-title').textContent=`${rear.kind==='bus'?'BUS':'TRUCK'} BEHIND!`;$('#rear-alert').style.setProperty('--urgency',String(rear.urgency));$('#rear-vehicle').style.left=`${Math.max(8,Math.min(92,(rear.x+5.3)/10.6*100))}%`;$('#rear-player').style.left=`${(sim.x+5.3)/10.6*100}%`;}
+ if(rear){const swerving=now<swerveUntil;$('#rear-title').textContent=`${rear.kind==='bus'?'BUS':'TRUCK'} ${swerving?'SWERVES ROUND YOU!':'BEHIND!'}`;$('#rear-alert small').textContent=swerving?'Hold your line':'Leave the highlighted line';$('#rear-alert').style.setProperty('--urgency',String(rear.urgency));$('#rear-vehicle').style.left=`${Math.max(8,Math.min(92,(rear.x+5.3)/10.6*100))}%`;$('#rear-player').style.left=`${(sim.x+5.3)/10.6*100}%`;}
  if(sim.status==='playing'&&sim.elapsed>nextVendor){nextVendor+=18;if(now>toastUntil&&!rear){const localCall=sim.neighborhood==='riverfront'?['সদরঘাট! লঞ্চ ছাড়বে!','সদরঘাট! · The launch is leaving!']:sim.neighborhood==='boulevard'?['তাজা সবজি!','তাজা সবজি! · Fresh vegetables!']:['এই, চা! গরম চা! এক কাপ নিয়ে যান!','চা! গরম চা! · Hot tea, fresh from the kettle.'];audio.say(localCall[0]);showToast(localCall[1]);}}
  const events=sim.events.splice(0);
  for(const event of events){
   if(event.type==='jump')audio.jump(VEHICLES[selected].id);if(event.type==='land')world?.land();if(event.type==='bump'){world?.shake(.35);world?.land();audio.bump();}
   if(event.type==='horn'){hornUntil=now+250;$('#horn').classList.add('ringing');audio.horn(VEHICLES[selected].id);if(!rear)showToast(event.text);}
   if(event.type==='warning'){showToast(event.text);if(event.text.includes('Ostad'))audio.say('ওস্তাদ, বামে প্লাস্টিক!');if(/cow|goru/i.test(event.text))audio.warning('cow',(event.x??0)/5.3);}
-  if(event.type==='rear-warning'){audio.warning('rear',(event.x??0)/5.3);showToast(event.text,true);}if(event.type==='rear-swerve'){audio.warning('rear',(event.x??0)/5.3);showToast(event.text,true);}
+  // The rear alert card itself carries these, so no toast stacks under it onto the rider on a short landscape screen.
+  if(event.type==='rear-warning')audio.warning('rear',(event.x??0)/5.3);if(event.type==='rear-swerve'){audio.warning('rear',(event.x??0)/5.3);swerveUntil=now+2500;}
   if(event.type==='paan-warning'){audio.warning('paan',(event.x??0)/5.3);showToast(event.text,true);}
   if(event.type==='crash'){lastFailure=event.text;if(/paan/i.test(event.text)){splashUntil=now+1900;$('#paan-splash').classList.add('splashed');}audio.impact();audio.say('আস্তে ভাই, একটু জায়গা দেন!');showToast(event.text,true);$('#impact').classList.add('hit');feedbackUntil=now+260;}
   if(event.type==='coin')audio.coin(event.chain??1);if(event.type==='snack'){audio.snack(event.kind??'cha');showToast(event.text);}if(event.type==='stomach'){audio.stomach();showToast(event.text,true);}if(event.type==='belly'){audio.belly();showToast(event.text);}
