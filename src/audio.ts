@@ -46,6 +46,7 @@ export class GameAudio {
   private lastHorn = -10;
   private lastImpact = -10;
   private lastJump = -10;
+  private lastCoin = -10;
   private lastSpeech = -10;
 
   async init(): Promise<void> {
@@ -196,7 +197,7 @@ export class GameAudio {
   resetRide(): void {
     this.active = false; this.silenceRide();
     this.fieldOffset = 0;
-    this.lastHorn = this.lastImpact = this.lastSpeech = this.lastReward = this.lastJump = -10;
+    this.lastHorn = this.lastImpact = this.lastSpeech = this.lastReward = this.lastJump = this.lastCoin = -10;
     this.nextStreetSound = this.context?.currentTime ?? 0;
     this.nextRearHorn = this.context?.currentTime ?? 0;
     this.duckUntil = this.warningUntil = 0; this.streetBeat = 0;
@@ -269,6 +270,31 @@ export class GameAudio {
     if (!this.ready()) return;
     this.impact();
     [0, 0.05, 0.1].forEach(delay => this.tone(180 + delay * 400, 0.05, 0.05, 'square', delay));
+  }
+
+  coin(chain: number): void {
+    if (!this.ready() || this.context!.currentTime - this.lastCoin < 0.05) return;
+    this.lastCoin = this.context!.currentTime;
+    // Successive coins climb a folk-style pentatonic scale, so a trail plays a short phrase.
+    const scale = [0, 2, 3, 7, 9, 12, 14, 15, 19], step = scale[(Math.max(1, Math.floor(chain) || 1) - 1) % scale.length];
+    this.tone(1046.5 * Math.pow(2, step / 12), 0.12, 0.06, 'triangle');
+  }
+
+  snack(kind: string): void {
+    if (!this.ready()) return;
+    if (kind === 'cha') { this.tone(2093, 0.08, 0.05, 'sine'); this.tone(523, 0.5, 0.05, 'sine', 0.08, 0, false, 1046); }
+    else if (kind === 'jhalmuri') [0, 0.09, 0.18, 0.27].forEach(delay => this.tone(1320, 0.05, 0.06, 'square', delay));
+    else this.tone(180, 0.35, 0.05, 'sawtooth', 0, 0, false, 120);
+  }
+
+  stomach(): void {
+    if (!this.ready()) return;
+    this.tone(140, 0.5, 0.09, 'sine', 0, 0, false, 70); this.tone(196, 0.6, 0.05, 'triangle', 0.2, 0, false, 185);
+  }
+
+  belly(): void {
+    if (!this.ready()) return;
+    this.tone(110, 0.25, 0.12, 'sine', 0, 0, false, 80);
   }
 
   reward(): void {
