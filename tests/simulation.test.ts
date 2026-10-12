@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { JUMPS, Simulation, VEHICLES, type Traffic } from '../src/simulation';
+import { SPEED_CAP } from '../src/campaign';
 
 const straight = { steer: 0, brake: false };
 function advance(sim: Simulation, seconds: number, steer = 0, brake = false) {
@@ -324,9 +325,9 @@ describe('repeatable fair routes', () => {
     expect(JSON.stringify(a)).toBe(JSON.stringify(b));
   });
 
-  it('leaves a truck-width navigable gap in every starting traffic row', () => {
+  it.each([0, 1, 2])('leaves a truck-width navigable gap in every starting traffic row of truck mission %i', (lesson) => {
     for (let seed = 1; seed <= 50; seed++) {
-      const sim = new Simulation(4, seed);
+      const sim = new Simulation(4, seed, lesson);
       for (const actor of sim.traffic) {
         const blocked = sim.traffic.filter(t => Math.abs(t.z - actor.z) < 7)
           .map(t => [Math.max(-5.3, t.x - t.width / 2), Math.min(5.3, t.x + t.width / 2)])
@@ -339,11 +340,50 @@ describe('repeatable fair routes', () => {
     }
   });
 
-  it('rides faster through busier streets in each chapter\'s later missions', () => {
+  it('starts each mission faster and keeps speeding up all the way to the finish', () => {
+    const early = [0, 1, 2].map(lesson => { const sim = new Simulation(0, 3, lesson); sim.start(); sim.traffic.length = 0; advance(sim, 7); return sim.speed; });
+    expect(early[1]).toBeGreaterThan(early[0] * 1.07); expect(early[2]).toBeGreaterThan(early[1] * 1.07);
+    for (let lesson = 0; lesson < 3; lesson++) {
+      const sim = new Simulation(0, 3, lesson);
+      sim.distance = sim.routeLength * 0.25; const quarter = sim.maxSpeed;
+      sim.distance = sim.routeLength * 0.97; expect(sim.maxSpeed, `lesson ${lesson}`).toBeGreaterThan(quarter * 1.1);
+    }
+    const ride = new Simulation(0, 3, 0); ride.start(); ride.traffic.length = 0;
+    let quarterSpeed = 0;
+    while (ride.status === 'playing' && ride.distance < ride.routeLength * 0.97) { advance(ride, 0.1); if (!quarterSpeed && ride.distance > ride.routeLength * 0.25) quarterSpeed = ride.speed; }
+    expect(ride.speed).toBeGreaterThan(quarterSpeed * 1.1);
+  });
+
+  it('never exceeds 100 km/h and keeps hazard rows at least a second apart at full speed', () => {
+    for (let stage = 0; stage < 15; stage++) {
+      const sim = new Simulation(Math.floor(stage / 3), 5, stage % 3); sim.start(); sim.traffic.length = 0;
+      let top = 0;
+      while (sim.status === 'playing') { advance(sim, 0.25); top = Math.max(top, sim.speed); }
+      expect(top, `stage ${stage}`).toBeLessThanOrEqual(SPEED_CAP + 1e-9);
+      for (let seed = 1; seed <= 5; seed++) {
+        const hazards = new Simulation(Math.floor(stage / 3), seed, stage % 3).traffic
+          .filter(t => t.kind === 'pothole' || t.kind === 'paan' || t.kind === 'cow').map(t => -t.z).sort((a, b) => a - b);
+        for (let i = 1; i < hazards.length; i++) expect((hazards[i] - hazards[i - 1]) / SPEED_CAP).toBeGreaterThanOrEqual(1 - 1e-9);
+      }
+    }
+  });
+
+  it('keeps hazards coming to the end of every ride, more of them in later missions', () => {
     for (let vehicle = 0; vehicle < 5; vehicle++) {
-      const speeds = [0, 1, 2].map(lesson => { const sim = new Simulation(vehicle, 3, lesson); sim.start(); sim.traffic.length = 0; advance(sim, 7); return sim.speed; });
-      expect(speeds[1]).toBeGreaterThan(speeds[0]); expect(speeds[2]).toBeGreaterThan(speeds[1]);
-      expect(speeds[2]).toBeLessThanOrEqual(VEHICLES[vehicle].maxSpeed * 1.12 + 1e-9);
+      const perMinute = [0, 1, 2].map(lesson => {
+        let rate = 0;
+        for (let seed = 1; seed <= 5; seed++) {
+          const sim = new Simulation(vehicle, seed, lesson);
+          const hazards = sim.traffic.filter(t => t.kind === 'pothole' || t.kind === 'paan' || t.kind === 'cow');
+          const firstHalf = hazards.filter(t => -t.z < sim.routeLength / 2).length;
+          // The opening is a dense teaching slalom; afterwards hazards keep coming right to the finish.
+          expect(hazards.length - firstHalf, `vehicle ${vehicle} lesson ${lesson} seed ${seed}`).toBeGreaterThanOrEqual(firstHalf * 0.6);
+          expect(hazards.some(t => -t.z > sim.routeLength * 0.75), `vehicle ${vehicle} lesson ${lesson} seed ${seed} final quarter`).toBe(true);
+          rate += hazards.length / sim.stage.parTime;
+        }
+        return rate;
+      });
+      expect(perMinute[1]).toBeGreaterThan(perMinute[0]); expect(perMinute[2]).toBeGreaterThan(perMinute[1]);
       const perMetre = [0, 1, 2].map(lesson => { const sim = new Simulation(vehicle, 3, lesson); return sim.traffic.length / sim.routeLength; });
       expect(perMetre[1]).toBeGreaterThan(perMetre[0]); expect(perMetre[2]).toBeGreaterThan(perMetre[1]);
     }

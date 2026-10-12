@@ -62,7 +62,15 @@ A grounded pothole contact keeps its current consequence (one heart). It adds a 
 `main.ts` currently starts each page load at seed 27, so a mission's first ride repeats. Each ride now takes its seed from `crypto.getRandomValues`. `Simulation` keeps accepting an explicit seed, so tests stay deterministic. Review mode keeps fixed seeds.
 
 ### Difficulty ramp
-Within each chapter, mission 2 runs about 6% faster than mission 1 with about 15% denser traffic; mission 3 runs about 12% faster with about 30% denser traffic. `campaign.ts` exposes these as `speedScale` and `densityScale` on each stage. Par times are recomputed from the scaled speed.
+Revised October 12, 2026 after play-testing: the first ramp (+6% and +12% speed) was not noticeable, and hazards thinned out towards each finish.
+- **Each mission starts faster:** missions 2 and 3 start 10% and 20% faster than mission 1 (`speedScale`).
+- **Speed builds during every ride:** top speed rises steadily from the mission's starting pace to +20%, +30% or +40% at the finish (`finishBoost`), never above 100 km/h (`SPEED_CAP`). The cap keeps 28 m hazard rows at least one second apart, so car and truck missions top out at 100 km/h.
+- **Hazards keep coming to the finish:** after the scripted opening slalom, hazards appear on every other row in mission 1 and two rows in three in missions 2 and 3. The calm finale is gone.
+- **Busier traffic:** hazard rows keep their 28 m rhythm; missions 2 and 3 add moving traffic between them (`densityScale`), about +14% and +21%.
+- Par times use the average of the starting and finishing speeds.
+- Fairness guards are tests: every mission stays winnable for the pilot bot across 30 broad random seeds; every row leaves a truck-width gap in every truck mission; hazard rows stay at least one second apart at the speed cap.
+
+Result on the bicycle: mission 1 rides 47 → 56 km/h with about 20 hazards a minute; mission 3 rides 56 → 79 km/h with about 26.
 
 ### Taka trails
 Taka (৳) coins are laid in trails at about 1.2 m spacing.

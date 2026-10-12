@@ -1,4 +1,4 @@
-import { getStage, NEIGHBORHOODS, type Neighborhood, type StageProfile } from './campaign';
+import { getStage, NEIGHBORHOODS, SPEED_CAP, type Neighborhood, type StageProfile } from './campaign';
 export type VehicleKind = 'bicycle' | 'rickshaw' | 'motorbike' | 'car' | 'truck';
 export interface VehicleProfile {
   id: VehicleKind; name: string; bangla: string; tagline: string;
@@ -81,7 +81,12 @@ export class Simulation {
     return NEIGHBORHOODS[(NEIGHBORHOODS.indexOf(this.stage.neighborhood) + zone) % NEIGHBORHOODS.length];
   }
   get neighborhood(): Neighborhood { return this.neighborhoodAt(this.distance); }
-  get maxSpeed(): number { return VEHICLES[this.vehicleIndex].maxSpeed * this.stage.speedScale; }
+  // Speed builds steadily from the mission's starting pace to its finish boost.
+  get maxSpeed(): number {
+    const start = VEHICLES[this.vehicleIndex].maxSpeed * this.stage.speedScale;
+    const progress = clamp(this.distance / this.routeLength, 0, 1);
+    return Math.min(SPEED_CAP, start * (1 + (this.stage.finishBoost - 1) * progress));
+  }
   get airborne(): boolean { return this.airTime >= 0; }
 
   jump(): boolean {
@@ -118,7 +123,9 @@ export class Simulation {
     // Each obstacle has a separate row. Repeated curb/center encounters prevent
     // a held steering key or no input from unlocking the next vehicle automatically.
     const hazardLines: (number | null)[] = [-4.55, 4.55, 0, null, -2.8, 2.8, null,
-      -4.55, 4.55, 0, null, -1.4, 1.4, null, -4.55, 4.55, 0, null, null, null, null];
+      -4.55, 4.55, 0, null, -1.4, 1.4, null, -4.55, 4.55, 0, null];
+    const lateLines = [-2.8, 2.8, 0, -4.55, 4.55, -1.4, 1.4];
+    const lateKinds = ['pothole', 'paan', 'cow'] as const;
     const mirror = this.random() < 0.5 ? -1 : 1;
     let id = 0;
     const addMoving = (kind: VehicleKind | 'bus' | 'cng', distance: number, x: number) => {
@@ -133,12 +140,12 @@ export class Simulation {
     // Hazard rows keep their 28 m rhythm; later missions add moving traffic between them.
     const busier = this.stage.densityScale > 1, busiest = this.stage.densityScale > 1.2;
     for (let distance = 42, row = 0; distance < this.routeLength - 25; distance += 28, row++) {
-        // The last district becomes a traffic finale rather than replaying the
-        // opening pothole slalom on top of late reactive encounters.
-        const hazardX = row < hazardLines.length ? hazardLines[row] : (row % 7 === 0 ? (row % 2 ? -1.4 : 1.4) : null);
+        // After the scripted opening, hazards keep coming to the finish, more often in later missions.
+        const lateHazard = row % 7 !== 3 && (this.stageIndex === 0 ? row % 2 === 0 : row % 3 !== 2);
+        const hazardX = row < hazardLines.length ? hazardLines[row] : lateHazard ? lateLines[row % lateLines.length] : null;
         const hazard = hazardX !== null;
         const pedestrian = !hazard && row % 7 === 3;
-        const kind = hazard ? (row >= 21 || row === 11 ? 'cow' : row % 2 === 0 ? 'pothole' : 'paan') : pedestrian ? 'pedestrian' : kinds[Math.floor(this.random() * kinds.length)];
+        const kind = hazard ? (row >= hazardLines.length ? lateKinds[row % 3] : row === 11 ? 'cow' : row % 2 === 0 ? 'pothole' : 'paan') : pedestrian ? 'pedestrian' : kinds[Math.floor(this.random() * kinds.length)];
         const profile = VEHICLES.find(vehicle => vehicle.id === kind);
         const width = profile?.width ?? (kind === 'bus' ? 2.4 : kind === 'cng' ? 1.5 : kind === 'pedestrian' ? 0.65 : 1.65);
         const length = profile?.length ?? (kind === 'bus' ? 6.5 : kind === 'cng' ? 2.5 : kind === 'pedestrian' ? 0.65 : kind === 'cow' ? 2.1 : 1.4);

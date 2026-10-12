@@ -3,7 +3,7 @@ export interface StageProfile {
   id: number; vehicleIndex: number; lessonIndex: 0 | 1 | 2;
   name: string; bangla: string; neighborhood: Neighborhood; objective: string;
   routeLength: number; parTime: number; nearMissTarget: number;
-  speedScale: number; densityScale: number;
+  speedScale: number; finishBoost: number; densityScale: number;
 }
 export const NEIGHBORHOODS: Neighborhood[] = ['bazaar', 'riverfront', 'boulevard'];
 const lessonNames = [
@@ -21,18 +21,21 @@ const objectives = [
   ['Bring the family to the river. Your horn carries a little more weight.', 'Make the pickup through evening traffic. Brake early for blocked lanes.', 'Read the city from behind the wheel. Clean riding earns the next keys.'],
   ['Bring market cargo through the city. Smaller traffic makes room for you.', 'Carry a full load past the market. Even a king watches for cows and broken road.', 'Complete the crown run. Command the traffic and bring your cargo home.'],
 ];
-// Each chapter's later missions run faster through busier streets.
-const ramp = [{ speed: 1, density: 1 }, { speed: 1.06, density: 1.15 }, { speed: 1.12, density: 1.3 }];
+// Fastest any vehicle may go (100 km/h): hazard rows stay at least a second apart.
+export const SPEED_CAP = 28;
+// Each mission starts faster than the last and speeds up further on the way to the finish.
+const ramp = [{ speed: 1, finish: 1.2, density: 1 }, { speed: 1.1, finish: 1.3, density: 1.15 }, { speed: 1.2, finish: 1.4, density: 1.3 }];
 export const STAGES: StageProfile[] = Array.from({ length: 15 }, (_, id) => {
   const vehicleIndex = Math.floor(id / 3), lessonIndex = (id % 3) as 0 | 1 | 2;
-  const { speed: speedScale, density: densityScale } = ramp[lessonIndex];
-  const speed = [13, 14, 19, 21, 23][vehicleIndex] * speedScale;
+  const { speed: speedScale, finish: finishBoost, density: densityScale } = ramp[lessonIndex];
+  const base = [13, 14, 19, 21, 23][vehicleIndex] * speedScale;
+  const speed = (Math.min(SPEED_CAP, base) + Math.min(SPEED_CAP, base * finishBoost)) / 2;
   const routeLength = 650 + vehicleIndex * 80 + lessonIndex * 70;
   return { id, vehicleIndex, lessonIndex, name: lessonNames[vehicleIndex][lessonIndex], bangla: bangla[lessonIndex],
     neighborhood: NEIGHBORHOODS[(vehicleIndex + lessonIndex) % 3],
     objective: objectives[vehicleIndex][lessonIndex],
     routeLength, parTime: Math.ceil(routeLength / speed * 1.65 + 10), nearMissTarget: 2 + lessonIndex * 2,
-    speedScale, densityScale };
+    speedScale, finishBoost, densityScale };
 });
 export function getStage(vehicleIndex: number, lessonIndex = 0): StageProfile {
   const vehicle = Number.isFinite(vehicleIndex) ? Math.max(0, Math.min(4, Math.floor(vehicleIndex))) : 0;
