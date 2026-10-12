@@ -117,14 +117,14 @@ $('#start').onclick=()=>void start();$('#pause').onclick=togglePause;$('#horn').
 $('.brand').onclick=e=>{e.preventDefault();menu();};
 const closeSettings=()=>{$('#settings').classList.add('hidden');$('#menu').inert=false;$('#settings-open').focus();persist();};
 $('#settings-open').onclick=()=>{$('#settings').classList.remove('hidden');$('#menu').inert=true;$('#quality').focus();};$('#settings-close').onclick=closeSettings;
-let shopTab:ShopTab='looks';
+let shopTab:ShopTab='looks';const BROKE_NOTE='Not enough taka yet — ride and collect more!';
 function drawShop(note=''){$('#shop-wallet').innerHTML=`<i class="coin" aria-hidden="true"></i><span>Your wallet</span><b>৳${save.taka}</b>`;$('#shop-note').textContent=note;$('#shop-list').innerHTML=renderShop(save,VEHICLES[selected].id,shopTab);document.querySelectorAll<HTMLButtonElement>('.shop-tab').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.tab===shopTab)));drawWallet();}
 const closeShop=()=>{$('#shop').classList.add('hidden');$('#menu').inert=false;$('#shop-open').focus();};
 $('#shop-open').onclick=()=>{drawShop();$('#shop').classList.remove('hidden');$('#menu').inert=true;$('#shop-close').focus();};$('#shop-close').onclick=closeShop;
 $('#shop').addEventListener('click',e=>{const b=(e.target as HTMLElement).closest<HTMLButtonElement>('button');if(!b||b.id==='shop-close')return;let note='';
  if(b.dataset.tab)shopTab=b.dataset.tab==='power-ups'?'power-ups':'looks';
- else if(b.dataset.look){const id=b.dataset.look;if(save.owned.includes(id))toggleLook(save,id);else{const r=buyLook(save,id);note=r==='bought'?'Bought and equipped — enjoy the ride!':r==='too-poor'?'Not enough taka yet — ride and collect more!':'';}}
- else if(b.dataset.upgrade){const r=buyUpgrade(save,b.dataset.upgrade as 'cha'|'jhalmuri'|'chaap');note=r==='bought'?'Upgraded!':r==='too-poor'?'Not enough taka yet — ride and collect more!':'';}
+ else if(b.dataset.look){const id=b.dataset.look;if(save.owned.includes(id))toggleLook(save,id);else{const r=buyLook(save,id);note=r==='bought'?'Bought and equipped — enjoy the ride!':r==='too-poor'?BROKE_NOTE:'';}}
+ else if(b.dataset.upgrade){const r=buyUpgrade(save,b.dataset.upgrade as 'cha'|'jhalmuri'|'chaap');note=r==='bought'?'Upgraded!':r==='too-poor'?BROKE_NOTE:'';}
  persist();world?.setLook(vehicleLook(save,VEHICLES[selected].id));drawShop(note);});
 window.addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('#shop').classList.contains('hidden')){e.preventDefault();closeShop();}if(e.key==='Escape'&&!$('#settings').classList.contains('hidden')){e.preventDefault();closeSettings();}if(e.key==='Escape'&&feedbackOpen()){e.preventDefault();closeFeedback();}});
 const feedbackOpen=()=>!$('#feedback').classList.contains('hidden');

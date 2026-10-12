@@ -30,27 +30,33 @@ export function actionAria(r: ShopRow, taka: number): string {
   return `${r.name} is maxed`;
 }
 
+function buyState(taka: number, price: number): 'buy' | 'too-poor' {
+  return taka >= price ? 'buy' : 'too-poor';
+}
+
 export function lookRows(save: Progress, vehicle: VehicleKind): ShopRow[] {
   return LOOKS.filter(item => item.vehicle === vehicle || item.vehicle === 'rider').map(item => {
     const owned = save.owned.includes(item.id);
     const equipped = save.equipped[`${item.vehicle}:${item.slot}`] === item.id;
+    let state: RowState;
+    if (equipped) state = 'equipped';
+    else if (owned) state = 'equip';
+    else state = buyState(save.taka, item.price);
     return {
       id: item.id,
       name: item.name,
       detail: item.vehicle === 'rider' ? 'Outfit · every ride' : SLOT_NAMES[item.slot],
       price: item.price,
-      state: equipped ? 'equipped' : owned ? 'equip' : save.taka >= item.price ? 'buy' : 'too-poor',
+      state,
     };
   });
 }
 
 function effectText(kind: PowerUp, level: number): string {
   const s = powerUpStats({ cha: level, jhalmuri: level, chaap: level });
-  return kind === 'cha'
-    ? `${s.chaSeconds} s of speed`
-    : kind === 'jhalmuri'
-      ? `${s.magnetSeconds} s, ${s.magnetRadius} m pull`
-      : `stomach risk −${Math.round(s.stomachReduction * 100)} pts`;
+  if (kind === 'cha') return `${s.chaSeconds} s of speed`;
+  if (kind === 'jhalmuri') return `${s.magnetSeconds} s, ${s.magnetRadius} m pull`;
+  return `stomach risk −${Math.round(s.stomachReduction * 100)} pts`;
 }
 
 export function powerUpRows(save: Progress): ShopRow[] {
@@ -64,7 +70,7 @@ export function powerUpRows(save: Progress): ShopRow[] {
       level,
       detail: maxed ? `Maxed: ${effectText(kind, level)}` : `${effectText(kind, level)} → ${effectText(kind, level + 1)}`,
       price,
-      state: maxed ? 'maxed' : save.taka >= price ? 'buy' : 'too-poor',
+      state: maxed ? 'maxed' : buyState(save.taka, price),
     };
   });
 }

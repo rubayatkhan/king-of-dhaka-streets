@@ -436,7 +436,7 @@ export class World {
    mesh.count=n;mesh.instanceMatrix.needsUpdate=true;});
   const keep=new Set<number>();
   for(const snack of sim.snacks){if(snack.eaten||snack.z-z>25||snack.z-z<-110)continue;keep.add(snack.id);let model=this.snackModels.get(snack.id);
-   if(!model){model=snackModel(snack.kind);const halo=new T.Sprite(this.haloMaterial(snack.kind));halo.position.y=snack.kind==='jhalmuri'?.32:snack.kind==='cha'?.2:.1;model.add(halo);model.userData.halo=halo;this.snackModels.set(snack.id,model);this.scene.add(model);}
+   if(!model){model=snackModel(snack.kind);const halo=new T.Sprite(this.haloMaterial(snack.kind));halo.position.y=({cha:.2,jhalmuri:.32,chaap:.1})[snack.kind];model.add(halo);model.userData.halo=halo;this.snackModels.set(snack.id,model);this.scene.add(model);}
    model.position.set(pathX(snack.z)+snack.x,.75+Math.sin(this.clock*2.4+snack.id)*.12,snack.z);model.rotation.y=this.clock*1.6;(model.userData.halo as T.Sprite).scale.setScalar(.95+Math.sin(this.clock*3.2+snack.id)*.07);}
   for(const [id,m] of this.snackModels)if(!keep.has(id)){disposeModel(m);this.snackModels.delete(id);}
  }
