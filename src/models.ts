@@ -69,6 +69,7 @@ function wheel(g:T.Group,x:number,y:number,z:number,r=.43,wide=.09,spokes=true) 
   return hub;
 }
 export type Model = T.Group & {userData:{wheels?:T.Group[];legs?:T.Group[];rider?:T.Group;[key:string]:unknown}};
+export interface VehicleLook { paint?: number; art?: 'peacock'|'tiger'|'city'|'rose'; extra?: 'streamers'|'basket'|'garland'|'red-helmet'; outfit?: { shirt: number; lower: number; accent?: number } }
 function capsule(g:T.Group,x:number,y:number,z:number,rx:number,ry:number,rz:number,c:number|string){
  const m=new T.Mesh(new T.CapsuleGeometry(1,1,4,10),material(c));m.position.set(x,y,z);m.scale.set(rx,ry/1.5,rz);m.castShadow=true;g.add(m);return m;
 }
