@@ -11,6 +11,17 @@ export const VEHICLES: VehicleProfile[] = [
   { id: 'car', name: 'Car', bangla: 'গাড়ি', tagline: 'Own your lane. Read the gaps.', maxSpeed: 21, width: 1.8, length: 3.7, steering: 4.4, authority: 3, color: 0xf2dbad },
   { id: 'truck', name: 'Truck', bangla: 'ট্রাক', tagline: 'The street hears you coming.', maxSpeed: 23, width: 2.5, length: 6.2, steering: 3.8, authority: 5, color: 0x259b99 },
 ];
+export type JumpClear = 'pothole' | 'paan' | 'splash';
+export interface JumpProfile { airtime: number; height: number; clears: JumpClear[] }
+// Every vehicle hops; smaller ones fly higher and clear more. Nothing clears traffic, cows or people.
+export const JUMPS: Record<VehicleKind, JumpProfile> = {
+  bicycle: { airtime: 0.6, height: 0.9, clears: ['pothole', 'paan', 'splash'] },
+  motorbike: { airtime: 0.55, height: 0.8, clears: ['pothole', 'paan', 'splash'] },
+  rickshaw: { airtime: 0.45, height: 0.5, clears: ['pothole', 'paan'] },
+  car: { airtime: 0.35, height: 0.25, clears: ['pothole'] },
+  truck: { airtime: 0.3, height: 0.15, clears: ['pothole'] },
+};
+const JUMP_COOLDOWN = 0.35, AIR_STEERING = 0.6;
 export type Traffic = {
   id: number; kind: VehicleKind | 'bus' | 'cng' | 'pedestrian' | 'pothole' | 'paan' | 'cow';
   x: number; z: number; speed: number; width: number; length: number; passed: boolean; warn: boolean;
@@ -40,6 +51,7 @@ export class Simulation {
   nearMisses = 0; maxCombo = 0; stars: 0 | 1 | 2 | 3 = 0; rank = 'Learner';
   readonly stage: StageProfile; readonly stageIndex: 0 | 1 | 2;
   invulnerable = 0; hornCooldown = 0;
+  y = 0; airTime = -1; jumpCooldown = 0;
   readonly routeLength: number;
   private rng: number;
   private yielding = new Map<number, { x: number; until: number }>();
@@ -47,6 +59,7 @@ export class Simulation {
   private crossing = new Map<number, { target: number; startsAt: number }>();
   private hit = new Set<number>();
   private contacted = new Set<number>();
+  private cleared = new Set<number>();
   private thrown = new Set<number>();
   private encounterId = 1000;
   private rearEncounters = 0;
@@ -69,6 +82,28 @@ export class Simulation {
   }
   get neighborhood(): Neighborhood { return this.neighborhoodAt(this.distance); }
   get maxSpeed(): number { return VEHICLES[this.vehicleIndex].maxSpeed * this.stage.speedScale; }
+  get airborne(): boolean { return this.airTime >= 0; }
+
+  jump(): boolean {
+    if (this.status !== 'playing' || this.airborne || this.jumpCooldown > 0) return false;
+    this.airTime = 0;
+    this.events.push({ type: 'jump', text: 'Hop!', x: this.x, z: this.z });
+    return true;
+  }
+
+  private updateJump(dt: number): void {
+    if (!this.airborne) { this.jumpCooldown = Math.max(0, this.jumpCooldown - dt); return; }
+    const profile = JUMPS[VEHICLES[this.vehicleIndex].id];
+    this.airTime += dt;
+    const t = this.airTime / profile.airtime;
+    if (t < 1) { this.y = 4 * profile.height * t * (1 - t); return; }
+    this.airTime = -1; this.y = 0; this.jumpCooldown = JUMP_COOLDOWN;
+    this.events.push({ type: 'land', text: '', x: this.x, z: this.z });
+  }
+
+  private clears(kind: string): boolean {
+    return this.airborne && (JUMPS[VEHICLES[this.vehicleIndex].id].clears as string[]).includes(kind);
+  }
 
   private random(): number {
     this.rng = (Math.imul(this.rng, 1664525) + 1013904223) >>> 0;
@@ -141,6 +176,9 @@ export class Simulation {
       this.step(step, input);
       left -= step;
     }
+    // Results always show the rider on the road.
+    const status = this.status as Simulation['status']; // step() may have ended the ride
+    if (status === 'won' || status === 'lost') { this.airTime = -1; this.y = 0; }
   }
 
   private step(dt: number, input: Input): void {
@@ -148,11 +186,12 @@ export class Simulation {
     this.elapsed += dt;
     this.invulnerable = Math.max(0, this.invulnerable - dt);
     this.hornCooldown = Math.max(0, this.hornCooldown - dt);
+    this.updateJump(dt);
     if (this.elapsed > this.chainUntil) this.combo = 0;
     const targetSpeed = input.brake ? 1.4 : this.maxSpeed;
     const response = input.brake ? 3.5 : 1.05;
     this.speed += (targetSpeed - this.speed) * (1 - Math.exp(-response * dt));
-    const steer = Number.isFinite(input.steer) ? clamp(input.steer, -1, 1) : 0;
+    const steer = (Number.isFinite(input.steer) ? clamp(input.steer, -1, 1) : 0) * (this.airborne ? AIR_STEERING : 1);
     this.x = clamp(this.x + steer * vehicle.steering * (0.45 + 0.55 * this.speed / this.maxSpeed) * dt,
       -ROAD_HALF_WIDTH + vehicle.width / 2, ROAD_HALF_WIDTH - vehicle.width / 2);
     this.distance = Math.min(this.routeLength, this.distance + this.speed * dt);
@@ -201,8 +240,11 @@ export class Simulation {
       const lateralContact = actor.kind === 'pothole' || actor.kind === 'paan' ? 0.38 : 0.43;
       const overlapX = Math.abs(this.x - actor.x) < (vehicle.width + actor.width) * lateralContact;
       const overlapZ = Math.abs(ahead) < (vehicle.length + actor.length) * 0.43;
-      if (overlapX && overlapZ) { this.contacted.add(actor.id); this.combo = 0; }
-      if (overlapX && overlapZ && this.invulnerable <= 0 && !this.hit.has(actor.id)) {
+      // Being airborne at first overlap clears the hazard for the whole pass.
+      if (overlapX && overlapZ && !this.hit.has(actor.id) && this.clears(actor.kind)) this.cleared.add(actor.id);
+      const cleared = this.cleared.has(actor.id);
+      if (overlapX && overlapZ && !cleared) { this.contacted.add(actor.id); this.combo = 0; }
+      if (overlapX && overlapZ && !cleared && this.invulnerable <= 0 && !this.hit.has(actor.id)) {
         this.hit.add(actor.id);
         this.health = Math.max(0, this.health - 1);
         this.speed *= 0.28;
@@ -265,7 +307,7 @@ export class Simulation {
         p.y = 1.35 * (1 - p.progress) + Math.sin(Math.PI * p.progress) * 1.25;
         if (p.remaining <= 1e-8) { p.phase = 'splash'; p.remaining = 0.8; p.progress = 0; p.x = p.targetX; p.z = p.targetZ; p.y = 0.03; }
       }
-      if (p.phase === 'splash' && Math.abs(this.x - p.x) < vehicle.width / 2 + p.radius && Math.abs(this.z - p.z) < vehicle.length / 2 + p.radius) {
+      if (p.phase === 'splash' && !this.clears('splash') && Math.abs(this.x - p.x) < vehicle.width / 2 + p.radius && Math.abs(this.z - p.z) < vehicle.length / 2 + p.radius) {
         this.contacted.add(p.id); this.combo = 0;
         if (this.invulnerable <= 0 && !this.hit.has(p.id)) {
           this.hit.add(p.id); this.health = Math.max(0, this.health - 1); this.speed *= 0.4; this.invulnerable = 2;

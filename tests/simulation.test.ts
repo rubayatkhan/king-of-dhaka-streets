@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Simulation, VEHICLES, type Traffic } from '../src/simulation';
+import { JUMPS, Simulation, VEHICLES, type Traffic } from '../src/simulation';
 
 const straight = { steer: 0, brake: false };
 function advance(sim: Simulation, seconds: number, steer = 0, brake = false) {
@@ -356,5 +356,92 @@ describe('repeatable fair routes', () => {
     }
     expect(rearWarnings).toBeGreaterThanOrEqual(100);
     expect(paanWarnings).toBeGreaterThanOrEqual(30);
+  });
+});
+
+describe('jumping', () => {
+  const splash = (sim: Simulation) => ({ id: 77, sourceId: 78, phase: 'splash' as const, sourceX: 5, sourceZ: sim.z, targetX: 0, targetZ: sim.z,
+    x: 0, y: 0.03, z: sim.z, radius: 0.72, progress: 0, remaining: 0.8 });
+
+  it('hops a bicycle over a pothole when timed and counts a clean pass', () => {
+    const sim = new Simulation(0); sim.start(); sim.speed = 10; sim.traffic = [obstacle({ z: sim.z - 3 })];
+    expect(sim.jump()).toBe(true); advance(sim, 1);
+    expect(sim.health).toBe(3); expect(sim.overtakes).toBe(1);
+    expect(sim.events.map(e => e.type)).toEqual(expect.arrayContaining(['jump', 'land']));
+  });
+
+  it('lands into a pothole after jumping too early', () => {
+    const sim = new Simulation(0); sim.start(); sim.speed = 10; sim.traffic = [obstacle({ z: sim.z - 12 })];
+    sim.jump(); advance(sim, 2);
+    expect(sim.health).toBe(2);
+  });
+
+  it('lets a truck bounce a pothole but never clear a cow', () => {
+    const bounce = new Simulation(4); bounce.start(); bounce.speed = 10; bounce.traffic = [obstacle({ z: bounce.z - 5 })];
+    bounce.jump(); advance(bounce, 1);
+    expect(bounce.health).toBe(3);
+    const cow = new Simulation(4); cow.start(); cow.speed = 10; cow.traffic = [obstacle({ kind: 'cow', z: cow.z - 5, length: 2.1 })];
+    cow.jump(); advance(cow, 1);
+    expect(cow.health).toBe(2);
+  });
+
+  it.each([0, 1, 2, 3, 4])('never clears moving traffic in vehicle %i', (index) => {
+    const sim = new Simulation(index); sim.start(); sim.speed = 10; sim.traffic = [obstacle({ kind: 'car', z: sim.z - 3, width: 1.8, length: 3.7 })];
+    sim.jump(); advance(sim, 1);
+    expect(sim.health).toBe(2);
+  });
+
+  it('jumps a paan splash on two wheels but not in a rickshaw', () => {
+    for (const [index, health] of [[0, 3], [2, 3], [1, 2]]) {
+      const sim = new Simulation(index); sim.start(); sim.traffic = []; sim.projectiles = [splash(sim)];
+      sim.jump(); sim.update(1 / 60, straight);
+      expect(sim.health, `vehicle ${index}`).toBe(health);
+    }
+  });
+
+  it('follows each vehicle\'s jump arc and enforces a landing cooldown', () => {
+    for (const vehicle of VEHICLES) {
+      const sim = new Simulation(VEHICLES.indexOf(vehicle)); sim.start(); sim.traffic = [];
+      const profile = JUMPS[vehicle.id];
+      sim.jump(); advance(sim, profile.airtime / 2);
+      expect(sim.y).toBeCloseTo(profile.height, 1);
+      expect(sim.jump()).toBe(false);
+      advance(sim, profile.airtime / 2 + 0.05);
+      expect(sim.airborne).toBe(false); expect(sim.y).toBe(0);
+      expect(sim.jump()).toBe(false);
+      advance(sim, 0.4);
+      expect(sim.jump()).toBe(true);
+    }
+  });
+
+  it('steers with 60% authority in the air', () => {
+    const ground = new Simulation(0), air = new Simulation(0);
+    for (const sim of [ground, air]) { sim.start(); sim.traffic = []; }
+    air.jump(); advance(ground, 0.2, 1); advance(air, 0.2, 1);
+    expect(air.x).toBeCloseTo(ground.x * 0.6, 5);
+  });
+
+  it('ignores jump requests before the start, while paused and after the finish', () => {
+    const sim = new Simulation(0);
+    expect(sim.jump()).toBe(false);
+    sim.start(); sim.pause(); expect(sim.jump()).toBe(false);
+    sim.resume(); sim.traffic = []; sim.distance = sim.routeLength - 0.1; advance(sim, 0.1);
+    expect(sim.status).toBe('won'); expect(sim.jump()).toBe(false);
+  });
+
+  it('freezes the hop while paused and finishes it after resuming', () => {
+    const sim = new Simulation(0); sim.start(); sim.traffic = [];
+    sim.jump(); advance(sim, 0.2); const height = sim.y;
+    sim.pause(); sim.update(0.2, straight); expect(sim.y).toBe(height);
+    sim.resume(); advance(sim, 1); expect(sim.airborne).toBe(false); expect(sim.y).toBe(0);
+  });
+
+  it('puts the rider back on the ground when the ride ends mid-air', () => {
+    const won = new Simulation(0); won.start(); won.traffic = []; won.distance = won.routeLength - 0.5;
+    won.jump(); advance(won, 0.2);
+    expect(won.status).toBe('won'); expect(won.airborne).toBe(false); expect(won.y).toBe(0);
+    const lost = new Simulation(0); lost.start(); lost.health = 1; lost.speed = 10; lost.traffic = [obstacle({ kind: 'car', z: lost.z - 2, width: 1.8, length: 3.7 })];
+    lost.jump(); advance(lost, 0.5);
+    expect(lost.status).toBe('lost'); expect(lost.airborne).toBe(false); expect(lost.y).toBe(0);
   });
 });
