@@ -130,8 +130,9 @@ export class Simulation {
     addMoving('cng', 14, 1.8 * mirror);
     addMoving('bus', 28, -2.7 * mirror);
     addMoving('rickshaw', 42, 0.4 * mirror);
-    const spacing = 28 / this.stage.densityScale;
-    for (let distance = 42, row = 0; distance < this.routeLength - 25; distance += spacing, row++) {
+    // Hazard rows keep their 28 m rhythm; later missions add moving traffic between them.
+    const busier = this.stage.densityScale > 1, busiest = this.stage.densityScale > 1.2;
+    for (let distance = 42, row = 0; distance < this.routeLength - 25; distance += 28, row++) {
         // The last district becomes a traffic finale rather than replaying the
         // opening pothole slalom on top of late reactive encounters.
         const hazardX = row < hazardLines.length ? hazardLines[row] : (row % 7 === 0 ? (row % 2 ? -1.4 : 1.4) : null);
@@ -151,13 +152,18 @@ export class Simulation {
         // Intermediate rows add city life without stacking actors across the road.
         // Nearby moving vehicles share a side in small groups; hazards still make
         // every straight corridor unsafe somewhere along the complete route.
-        if (row % 4 !== 3 && distance + spacing / 2 < this.routeLength - 25) {
+        if ((row % 4 !== 3 || busier) && distance + 14 < this.routeLength - 25) {
           const lightTraffic: (VehicleKind | 'cng')[] = ['rickshaw', 'cng', 'bicycle'];
           const trafficKind = lightTraffic[(row + Math.floor(this.random() * 3)) % lightTraffic.length];
           const trafficSide = (Math.floor(row / 3) % 2 === 0 ? 1 : -1) * mirror;
           const inner = row % (this.stageIndex === 2 ? 3 : 5) === 0;
           const innerKind = this.stageIndex === 2 && row % 2 ? trafficKind : 'bicycle';
-          addMoving(inner ? innerKind : trafficKind, distance + spacing / 2, inner ? trafficSide * (1 + this.random() * 0.35) : trafficSide * (3.9 + this.random() * 0.15));
+          addMoving(inner ? innerKind : trafficKind, distance + 14, inner ? trafficSide * (1 + this.random() * 0.35) : trafficSide * (3.9 + this.random() * 0.15));
+        }
+        // The busiest missions add a curbside vehicle on the opposite side every eighth row.
+        if (busiest && row % 8 === 1 && distance + 20.5 < this.routeLength - 25) {
+          const side = (Math.floor(row / 3) % 2 === 0 ? -1 : 1) * mirror;
+          addMoving(row % 16 === 1 ? 'rickshaw' : 'cng', distance + 20.5, side * (3.9 + this.random() * 0.15));
         }
     }
   }

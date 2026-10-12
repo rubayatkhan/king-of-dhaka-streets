@@ -355,6 +355,21 @@ describe('repeatable fair routes', () => {
     expect(JSON.stringify(sim)).toBe(before);
   });
 
+  it('keeps every ramped mission winnable across a broad spread of random ride seeds', () => {
+    // Players get a fresh random seed every ride, so sample widely rather than seeds 1–7.
+    const losses: string[] = [];
+    for (let stage = 0; stage < 15; stage++) {
+      let lost = 0;
+      for (let i = 1; i <= 30; i++) {
+        const sim = new Simulation(Math.floor(stage / 3), Math.imul(i, 2654435761) >>> 0, stage % 3); sim.start();
+        for (let frame = 0; frame < 180 * 60 && sim.status === 'playing'; frame++) pilot(sim);
+        if (sim.status !== 'won') lost++;
+      }
+      if (lost > 1) losses.push(`stage ${stage}: ${lost}/30`);
+    }
+    expect(losses).toEqual([]);
+  }, 120000);
+
   it('completes all fifteen lessons across 105 seeded pilots with live rear and paan encounters', () => {
     let rearWarnings = 0, paanWarnings = 0;
     for (let vehicle = 0; vehicle < 5; vehicle++) for (let lesson = 0; lesson < 3; lesson++) for (let seed = 1; seed <= 7; seed++) {
