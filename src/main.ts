@@ -2,7 +2,7 @@ import './style.css';
 import { Simulation, VEHICLES } from './simulation';
 import { World } from './world';
 import { GameAudio } from './audio';
-import { STAGES, type Neighborhood } from './campaign';
+import { SPEED_CAP, STAGES, type Neighborhood } from './campaign';
 import { loadProgress, completeStage, availableStage } from './progress';
 import { STOMACH_SECONDS } from './pickups';
 import { bankRide, buyLook, buyUpgrade, describePurchases, equippedHorn, LOOKS, powerUpStats, ridePayout, toggleLook, vehicleLook } from './economy';
@@ -68,7 +68,7 @@ $('#app').innerHTML=`
   </div><div id="tutorial">Hold arrows to steer · Brake for space · Watch behind</div>
  </section>
  <section id="overlay" class="overlay hidden" role="dialog" aria-modal="true" aria-label="Ride menu"><div class="panel" id="panel"></div></section>
- <section id="settings" class="overlay hidden" role="dialog" aria-modal="true" aria-label="Ride settings"><div class="panel settings-panel"><span class="panel-kicker">Make yourself comfortable</span><h2>Your ride, your way.</h2><label>Graphics <select id="quality"><option value="auto">Adaptive</option><option value="low">Battery saver</option><option value="high">Detailed</option></select></label><label>Gentler camera <input type="checkbox" id="reduced"/></label><label>Controls <select id="controls-mode"><option value="swipe">Swipe</option><option value="buttons">Buttons</option></select></label><label>Sound <input type="checkbox" id="sound-setting"/></label><p class="small-note">Real street ambience, original sound effects and AI-generated Bangla voices. Captions always stay on. <a href="${import.meta.env.BASE_URL}audio/credits.html" target="_blank" rel="noopener">Sound credits</a></p><p class="small-note">A fictional route inspired by Old Dhaka. Progress saves on this device. Keyboard: ← → to steer, ↓ or Space to brake, H to honk, Esc to pause.</p><button id="settings-close" class="primary">Back to the street</button></div></section>
+ <section id="settings" class="overlay hidden" role="dialog" aria-modal="true" aria-label="Ride settings"><div class="panel settings-panel"><span class="panel-kicker">Make yourself comfortable</span><h2>Your ride, your way.</h2><label>Graphics <select id="quality"><option value="auto">Adaptive</option><option value="low">Battery saver</option><option value="high">Detailed</option></select></label><label>Gentler camera <input type="checkbox" id="reduced"/></label><label>Controls <select id="controls-mode"><option value="swipe">Swipe</option><option value="buttons">Buttons</option></select></label><label>Sound <input type="checkbox" id="sound-setting"/></label><label>Music <input type="checkbox" id="music-setting"/></label><p class="small-note">Real street ambience, original sound effects and AI-generated Bangla voices. Captions always stay on. <a href="${import.meta.env.BASE_URL}audio/credits.html" target="_blank" rel="noopener">Sound credits</a></p><p class="small-note">A fictional route inspired by Old Dhaka. Progress saves on this device. Keyboard: ← → to steer, ↓ or Space to brake, H to honk, Esc to pause.</p><button id="settings-close" class="primary">Back to the street</button></div></section>
  <section id="shop" class="overlay hidden" role="dialog" aria-modal="true" aria-labelledby="shop-title"><div class="panel shop-panel"><div class="awning" aria-hidden="true"></div><div class="shop-head"><div><span class="panel-kicker">ঢাকার বাজার</span><h2 id="shop-title">The Bazaar</h2></div><p id="shop-wallet"></p></div><div class="shop-tabs" role="group" aria-label="Bazaar sections"><button class="shop-tab" data-tab="looks">Looks</button><button class="shop-tab" data-tab="power-ups">Power-ups</button></div><p id="shop-note" role="status" aria-live="polite"></p><div id="shop-list" class="shop-grid"></div><div class="shop-foot"><button id="shop-close" class="primary">Back to the garage</button></div></div></section>
  <section id="feedback" class="overlay hidden" role="dialog" aria-modal="true" aria-labelledby="feedback-title"><form id="feedback-form" class="panel feedback-panel" novalidate><span class="panel-kicker">Beta tester HQ</span><h2 id="feedback-title">Make the game better.</h2><p>What should we add, fix or keep? Every note goes straight to the game maker.</p>
   <fieldset class="feedback-kinds"><legend>This is…</legend><label><input type="radio" name="kind" value="idea" checked/><span>💡 A new idea</span></label><label><input type="radio" name="kind" value="bug"/><span>🛠 Something broken</span></label><label><input type="radio" name="kind" value="love"/><span>❤️ Something I love</span></label></fieldset>
@@ -114,7 +114,7 @@ function countUp(el:HTMLElement,total:number){if(total<=0||matchMedia('(prefers-
 function finish(){
  if(ending)return;ending=true;clearInput();audio.resetRide();$('#hud').inert=true;$('#rear-alert').classList.add('hidden');
  const won=sim.status==='won',id=stageId(),previousBest=save.best[id],graduated=won&&lesson===2&&selected<4,nextId=Math.min(14,id+1);
- const firstClear=won&&save.stars[id]===0;if(won){completeStage(save,id,sim.score,sim.stars);audio.finish();}else audio.loss();
+ const firstClear=won&&save.stars[id]===0;if(won){completeStage(save,id,sim.score,sim.stars);audio.finish();audio.medal(id===14);}else audio.loss();
  const ride={won,coins:sim.taka,stars:won?sim.stars:0,firstClear},payout=bankRide(save,sim,ride)??ridePayout(ride);persist();
  const next=STAGES[nextId],title=won?(id===14?'ঢাকার রাজা!':graduated?`${VEHICLES[selected+1].name} unlocked!`:'Made it, boss.'):'The city got you.';
  const cause=lastFailure;
@@ -155,6 +155,10 @@ $('#reduced').addEventListener('change',e=>{save.reduced=(e.target as HTMLInputE
 $('#sound-setting').addEventListener('change',e=>{save.muted=!(e.target as HTMLInputElement).checked;audio.setMuted(save.muted);updateSound();persist();});
 $('#quality').setAttribute('value',save.quality);($('#quality') as HTMLSelectElement).value=save.quality;($('#reduced') as HTMLInputElement).checked=save.reduced;
 for(const b of document.querySelectorAll<HTMLButtonElement>('.sound-toggle'))b.onclick=()=>{save.muted=!save.muted;audio.setMuted(save.muted);void audio.init();persist();updateSound();};
+$<HTMLInputElement>('#music-setting').checked=save.music;audio.setMusicOn(save.music);
+$('#music-setting').addEventListener('change',e=>{save.music=(e.target as HTMLInputElement).checked;audio.setMusicOn(save.music);persist();});
+// The menu theme needs one gesture first; pointerup (not pointerdown) is what unlocks audio for a touch on iOS.
+addEventListener('pointerup',()=>{if(!save.muted)void audio.init();},{once:true,capture:true});
 const touchFirst=matchMedia('(pointer: coarse)').matches;
 const controlMode=()=>save.controls??(touchFirst?'swipe':'buttons');
 function applyControlMode(){const mode=controlMode();$('#hud').classList.toggle('swipe-mode',mode==='swipe');$<HTMLSelectElement>('#controls-mode').value=mode;$('#tutorial').textContent=mode==='swipe'?'Drag to steer · Flick up to jump · Swipe down to brake':'Arrows to steer · ↑ to jump · Brake for space';}
@@ -204,6 +208,7 @@ function frame(now:number){const dt=Math.min((now-last)/1000,.05);last=now;
  if(swipe.takeJump())jump();steer+=((keyboard||swipe.steer||desired)-steer)*(1-Math.exp(-dt*17));
  accumulator+=dt;while(accumulator>=1/60){sim.update(1/60,{steer,brake:brake||swipe.brake||keys.has('ArrowDown')||keys.has('s')||keys.has(' ')});accumulator-=1/60;}
  const rear=sim.rearThreats.reduce<typeof sim.rearThreats[number]|undefined>((closest,t)=>!closest||t.timeToContact<closest.timeToContact?t:closest,undefined);
+ audio.setMusic({scene:screen==='playing'?sim.neighborhood:'menu',speed:Math.min(1,sim.speed/SPEED_CAP),combo:sim.combo,boost:sim.effects.boost>0,playing:screen!=='playing'||sim.status==='playing'});
  audio.update(sim.speed,VEHICLES[selected].id,sim.status==='playing',{neighborhood:sim.neighborhood,intensity:.5+lesson*.22,rear:rear?{kind:rear.kind,urgency:rear.urgency,x:rear.x}:undefined,traffic:sim.traffic,playerZ:sim.z,effects:{boost:sim.effects.boost,boostFraction:sim.effects.boost/Math.max(1,sim.powerUps.chaSeconds),magnet:sim.effects.magnet}});
  if(sim.status==='playing'&&sim.neighborhood!==lastDistrict){lastDistrict=sim.neighborhood;announceDistrict();}
  if(now>districtUntil||rear)$('#district-banner').classList.remove('visible');

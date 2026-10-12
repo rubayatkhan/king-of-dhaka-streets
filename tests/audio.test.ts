@@ -383,3 +383,31 @@ it('lets a nearby rickshaw ring its bell through the street cue without giving i
   const engines = (audio as unknown as { trafficEngines: { gain: MockNode }[] }).trafficEngines;
   for (const layer of engines) expect(layer.gain.gain.setTargetAtTime.mock.calls.at(-1)![0]).toBe(0);
 });
+
+it('keeps music silent while muted or hidden, and starts it once after unmuting', async () => {
+  const audio = await initialized(), state = { scene: 'bazaar' as const, speed: .5, combo: 0, boost: false, playing: true };
+  audio.setMuted(true); audio.setMusic(state);
+  const spy = vi.spyOn(globalThis, 'setInterval');
+  expect(spy).not.toHaveBeenCalled();
+  audio.setMuted(false); audio.setMusic(state); audio.setMusic(state);
+  expect(spy).toHaveBeenCalledTimes(1);
+  documentMock.hidden = true; visibility(); audio.setMusic(state);
+  expect(spy).toHaveBeenCalledTimes(1); // hidden stops it and does not restart
+});
+
+it('crowns only the final medal with the crowd shout, audible after the ride has ended', async () => {
+  fetchMock.mockImplementation(async (url: string) => url.endsWith('voices/manifest.json') ? { ok: true, json: async () => ({ ...manifestJson, 'crowd-king': { ai: true } }) } : answer(url));
+  const audio = new GameAudio(() => clock); await audio.init();
+  await vi.waitFor(() => expect(context.decodeAudioData).toHaveBeenCalledTimes(4)); await Promise.resolve();
+  audio.update(10, 'bicycle', true); audio.update(0, 'bicycle', false); audio.resetRide();
+  const speeches = () => context.sources.filter(source => !source.loop && source.buffer !== context.createBuffer.mock.results[0]?.value);
+  const tones = context.createOscillator.mock.calls.length, speech = speeches().length;
+  audio.medal(false);
+  expect(context.createOscillator.mock.calls.length).toBeGreaterThan(tones);
+  expect(speeches()).toHaveLength(speech);
+  audio.medal(true);
+  expect(speeches().length).toBe(speech + 1);
+  expect(speeches().at(-1)!.start).toHaveBeenCalled();
+  audio.setMuted(true); const muted = context.createOscillator.mock.calls.length; audio.medal(true);
+  expect(context.createOscillator.mock.calls.length).toBe(muted); expect(speeches().length).toBe(speech + 1);
+});

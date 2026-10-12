@@ -2,6 +2,8 @@
 import { DEFAULT_HORN, HORNS, JUMP_SOUND, SOUNDS, coinRecipe, transpose, type HornId, type Note, type Recipe, type ToneNote } from './soundbank';
 import type { VehicleKind } from './simulation';
 import { asDistrict, streetCue, type Cue } from './soundscape';
+import { MEDAL, type MusicState, type Scene } from './music';
+import { MusicPlayer } from './musicplayer';
 import { lineById, linesFor, sanitizeManifest, voiceSource, voiceUrl, type District, type VoiceLine, type VoiceManifest } from './voices';
 export interface StreetAudioContext {
   neighborhood: string;
@@ -61,6 +63,9 @@ export class GameAudio {
   private lastImpact = -10;
   private lastJump = -10;
   private lastCoin = -10;
+  private musicBus?: GainNode;
+  private music?: MusicPlayer;
+  musicOn = true;
 
   constructor(private clock: () => number = () => performance.now() / 1000) {}
 
@@ -86,6 +91,13 @@ export class GameAudio {
       this.fieldGain.gain.value = 0;
       // Recorded horns belong to the background mix, so urgent cues duck them too.
       this.fieldGain.connect(this.ambience);
+      this.musicBus = ctx.createGain(); this.musicBus.gain.value = 0.55; this.musicBus.connect(this.master);
+      this.music = new MusicPlayer({
+        context: ctx, output: this.musicBus, base: import.meta.env.BASE_URL,
+        play: (recipe, when, out) => this.schedule(recipe, when, out),
+        fetchJson: async url => { const r = await fetch(url); return r.ok ? r.json() : undefined; },
+        fetchBuffer: async url => { const r = await fetch(url); return r.ok ? ctx.decodeAudioData(await r.arrayBuffer()) : undefined; },
+      });
 
       this.noise = ctx.createBuffer(1, ctx.sampleRate * 3, ctx.sampleRate);
       const samples = this.noise.getChannelData(0);
@@ -145,6 +157,25 @@ export class GameAudio {
     this.muted = value;
     if (this.context) this.master?.gain.setTargetAtTime(value ? 0 : 0.48, this.context.currentTime, 0.03);
     if (value) this.silenceRide();
+  }
+
+  /** The adaptive music follows the screen, district, speed, combo and cha; muted, hidden or switched off means silence. */
+  setMusic(state: MusicState): void {
+    const ctx = this.context;
+    if (!ctx || !this.music) return;
+    const audible = state.playing && this.musicOn && !this.muted && !document.hidden && ctx.state === 'running';
+    this.music.setState({ ...state, playing: audible });
+    this.musicBus?.gain.setTargetAtTime(ctx.currentTime < this.duckUntil ? 0.2 : 0.55, ctx.currentTime, 0.08);
+  }
+  setMusicOn(on: boolean): void { this.musicOn = on; if (!on) this.music?.stop(); }
+  prepareMusic(scene: Scene): void { this.music?.prepare(scene); }
+  /** A dhol flourish for a medal, and the family's crowd shout for the final crown. */
+  medal(final: boolean): void {
+    if (!this.context || this.muted) return;
+    this.schedule(MEDAL, this.context.currentTime + 0.05, this.master!);
+    // The ride has already ended, so the shout plays straight from its buffer rather than through say(), which needs a live ride.
+    const shout = final && !document.hidden && this.context.state === 'running' ? this.voiceBuffers.get('crowd-king') : undefined;
+    if (shout) this.speak(shout);
   }
 
   update(speed: number, vehicle: string, active: boolean, street?: StreetAudioContext): void {
@@ -299,6 +330,7 @@ export class GameAudio {
 
   /** Decodes the voice lines for one district (or, with no district, the lines heard everywhere) the first time they are needed. */
   async prepareDistrict(district?: District): Promise<void> {
+    if (district) this.music?.prepare(district);
     await this.manifestLoad;
     await Promise.all(linesFor(district).map(line => this.loadVoice(line.id)));
   }
@@ -315,6 +347,12 @@ export class GameAudio {
     this.onCaption?.(line);
     const buffer = this.voiceBuffers.get(id);
     if (!buffer || !this.ready()) return false;
+    this.speak(buffer);
+    return true;
+  }
+
+  /** Plays a decoded line, replacing any line already speaking, and ducks the street under it. */
+  private speak(buffer: AudioBuffer): void {
     this.stopSpeech();
     const source = this.context!.createBufferSource();
     source.buffer = buffer;
@@ -323,7 +361,6 @@ export class GameAudio {
     this.speechSource = source;
     source.onended = () => { source.disconnect(); if (this.speechSource === source) this.speechSource = undefined; };
     source.start();
-    return true;
   }
 
   private stopSpeech(): void {
@@ -385,6 +422,7 @@ export class GameAudio {
   private silenceRide(): void {
     this.stopSpeech();
     this.stopField();
+    this.music?.stop(); // Mute, a hidden tab and every ride start or end stop the music too.
     for (const stop of [...this.temporary]) stop();
     const now = this.context?.currentTime ?? 0;
     this.ambience?.gain.setTargetAtTime(0, now, 0.025);
