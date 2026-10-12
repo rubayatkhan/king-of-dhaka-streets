@@ -372,3 +372,14 @@ it('cue() plays the sound then captions its voice line, and ignores an empty cue
   expect(context.createOscillator.mock.calls.length + context.sources.length).toBeGreaterThan(before);
   expect(captions).toEqual([busLine]);
 });
+
+it('lets a nearby rickshaw ring its bell through the street cue without giving it an engine layer', async () => {
+  const audio = await initialized();
+  const cue = vi.spyOn(audio, 'cue');
+  context.currentTime = 5;
+  audio.update(10, 'bicycle', true, { neighborhood: 'bazaar', intensity: .5, playerZ: 0, traffic: [{ kind: 'rickshaw', x: 2, z: -5, speed: 3 }] });
+  expect(cue).toHaveBeenCalledTimes(1);
+  expect(cue.mock.calls[0][0]).toMatchObject({ sound: 'rickshaw-tring' });
+  const engines = (audio as unknown as { trafficEngines: { gain: MockNode }[] }).trafficEngines;
+  for (const layer of engines) expect(layer.gain.gain.setTargetAtTime.mock.calls.at(-1)![0]).toBe(0);
+});

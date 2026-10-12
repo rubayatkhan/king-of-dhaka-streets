@@ -166,9 +166,11 @@ export class GameAudio {
     this.ambience.gain.setTargetAtTime(playing ? normalLevel * (now < this.duckUntil ? 0.23 : 1) : 0, now, 0.08);
     this.crowd?.gain.setTargetAtTime((this.fieldBuffer ? 0.35 : 1) * (market ? 0.09 : 0.045) * (0.65 + intensity) * (0.82 + 0.18 * Math.sin(now * 1.7)), now, 0.3);
     this.river?.gain.setTargetAtTime(river ? 0.11 + Math.sin(now * 0.65) * 0.03 : 0, now, 0.7);
-    const nearby = (street?.traffic ?? []).filter(t => /bus|truck|car|cng|motorbike/.test(t.kind))
-      .map(t => ({ actor:t, distance: Math.abs(t.z - finite(street?.playerZ ?? 0)) }))
-      .filter(t => t.distance < 55).sort((a,b) => a.distance - b.distance).slice(0, 2);
+    const withDistance = (street?.traffic ?? []).map(t => ({ actor: t, distance: Math.abs(t.z - finite(street?.playerZ ?? 0)) }))
+      .filter(t => t.distance < 55).sort((a, b) => a.distance - b.distance);
+    // Street cues hear every vehicle that has a voice (rickshaw bells included); only engine vehicles get a continuous engine layer.
+    const nearby = withDistance.filter(t => /bus|truck|car|cng|motorbike/.test(t.actor.kind)).slice(0, 2);
+    const cueActors = withDistance.filter(t => /rickshaw|bus|truck|car|cng|motorbike/.test(t.actor.kind));
     this.trafficEngines.forEach((layer, i) => {
       const near = nearby[i], actor = near?.actor;
       const heavy = actor && /bus|truck/.test(actor.kind);
@@ -198,7 +200,7 @@ export class GameAudio {
     this.pedalOsc?.frequency.setTargetAtTime(85 + movement * 30, now, 0.2);
     if (playing && now > this.nextStreetSound && now >= this.warningUntil) {
       this.nextStreetSound = now + 1.9 - intensity * 1.05 + Math.random() * 1.4;
-      this.cue(streetCue({ district, beat: ++this.streetBeat, nearby: nearby.map(n => ({ kind: n.actor.kind, x: n.actor.x, distance: n.distance })), random: Math.random }));
+      this.cue(streetCue({ district, beat: ++this.streetBeat, nearby: cueActors.map(n => ({ kind: n.actor.kind, x: n.actor.x, distance: n.distance })), random: Math.random }));
     }
   }
 
