@@ -7,7 +7,8 @@
     "dev": "vite --host 0.0.0.0",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --host 0.0.0.0",
-    "test": "vitest run"
+    "test": "vitest run",
+    "add-voice": "node --experimental-strip-types scripts/add-voice.ts"
   },
   "dependencies": {
     "three": "^0.180.0"

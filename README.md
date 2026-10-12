@@ -59,6 +59,16 @@ The soundscape combines a CC0 traffic field recording with original synthesized 
 
 The title illustration is concept art. Gameplay uses a genuine 3D street, animated riders, original decorated rickshaws, CNGs, buses, shops and an Ahsan Manzil-inspired landmark.
 
+## Recording street voices
+
+Family recordings replace the AI placeholder calls one line at a time. Each line's ID, the words to say and how to act them are in [the voice script](docs/voice-script.md). Trim and level a recording with one command:
+
+```sh
+npm run add-voice -- tea-vendor ~/Downloads/tea-vendor.m4a --credit "Ma"
+```
+
+The script needs [ffmpeg](https://ffmpeg.org) on your PATH and Node.js 22.18 or newer. It writes the MP3 to `public/audio/voices/` and updates `public/audio/voices/manifest.json`. The `--credit` name is published on the sound credits page, so use a name the family is happy to share, or omit it to be credited as "Family voice".
+
 ## Verification
 
 ```sh
