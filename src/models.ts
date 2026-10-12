@@ -77,14 +77,16 @@ const legUp=new T.Vector3(0,1,0),legDelta=new T.Vector3();
 function placeLimb(m:T.Mesh,ay:number,az:number,by:number,bz:number){
  legDelta.set(0,by-ay,bz-az);m.position.set(0,(ay+by)/2,(az+bz)/2);m.scale.y=legDelta.length();m.quaternion.setFromUnitVectors(legUp,legDelta.normalize());
 }
-function rider(parent:T.Group,shirt=0xd99936,z=.1,motor=false) {
+function rider(parent:T.Group,shirt=0xd99936,z=.1,motor=false,lower=0x294946,accent?:number,helmet?:number) {
   const g=new T.Group();g.position.set(0,0,z);g.userData.dynamic=true;parent.add(g);
-  const skin=0xa9754d,trousers=0x294946;
+  const skin=0xa9754d,trousers=lower;
   const upper=new T.Group();upper.position.set(0,1.1,.04);upper.rotation.x=-.19;g.add(upper);
   // Tailored round shirt, broad shoulders and narrower waist.
   const contour=[new T.Vector2(0,0),new T.Vector2(.20,.01),new T.Vector2(.235,.10),new T.Vector2(.26,.40),new T.Vector2(.23,.53),new T.Vector2(.13,.60),new T.Vector2(0,.60)];
   const torso=new T.Mesh(new T.LatheGeometry(contour,12),material(shirt));torso.scale.z=.64;torso.castShadow=true;upper.add(torso);
   capsule(upper,0,.04,.005,.215,.055,.143,shirt);
+  // A gamchha, sash or jersey stripe across the chest.
+  if(accent!==undefined)tube(upper,[-.2,.52,.14],[.21,.06,.15],.032,accent,6);
   // Cloth seams, rear yoke and rolled sleeve cuffs remain visible from the chase camera.
   tube(upper,[-.19,.44,.135],[.19,.44,.135],.009,0xb77b32,5);
   tube(upper,[0,.04,.15],[0,.42,.155],.006,0xba8038,5);
@@ -93,8 +95,8 @@ function rider(parent:T.Group,shirt=0xd99936,z=.1,motor=false) {
   capsule(upper,0,.64,-.015,.076,.12,.071,skin);
   sphere(upper,0,.81,-.026,.172,skin,.86,1.14,.92);
   for(const sign of [-1,1])sphere(upper,sign*.148,.81,-.02,.039,skin,.65,1,.65);
-  sphere(upper,0,.91,-.005,.166,motor?0x285866:0x202d2b,1,.60,1.01);
-  sphere(upper,0,.84,.085,.139,motor?0x285866:0x202d2b,1,.73,.51);
+  sphere(upper,0,.91,-.005,.166,motor?(helmet??0x285866):0x202d2b,1,.60,1.01);
+  sphere(upper,0,.84,.085,.139,motor?(helmet??0x285866):0x202d2b,1,.73,.51);
   sphere(upper,0,.8,-.176,.036,skin,.8,.9,1.1);
   if(motor){box(upper,0,.84,-.151,.24,.085,.028,0x193b44);tube(upper,[-.14,.8,0],[0,.70,-.06],.012,ink);}
   else{for(const sign of [-1,1])sphere(upper,sign*.058,.847,-.172,.013,0x172c2b,1,.6,.35);}
@@ -119,20 +121,27 @@ function rider(parent:T.Group,shirt=0xd99936,z=.1,motor=false) {
   }
   return {g,legs};
 }
-let artMat:T.MeshStandardMaterial;
-function rickshawArt() {
- if(artMat)return artMat;
- artMat=textured(canvasTexture(256,256,c=>{
-  c.fillStyle='#155748';c.fillRect(0,0,256,256);c.strokeStyle='#ffc758';c.lineWidth=9;c.strokeRect(9,9,238,238);c.strokeStyle='#ed5d3d';c.lineWidth=5;c.strokeRect(22,22,212,212);
+const artMats=new Map<string,T.MeshStandardMaterial>();
+function rickshawArt(theme='birds') {
+ const cached=artMats.get(theme);if(cached)return cached;
+ const mat=textured(canvasTexture(256,256,c=>{
+  c.fillStyle=({birds:'#155748',peacock:'#1d3f7a',tiger:'#2b5d3a',city:'#3a2a5d'} as Record<string,string>)[theme]??'#155748';c.fillRect(0,0,256,256);c.strokeStyle='#ffc758';c.lineWidth=9;c.strokeRect(9,9,238,238);c.strokeStyle='#ed5d3d';c.lineWidth=5;c.strokeRect(22,22,212,212);
   for(let i=0;i<12;i++){const a=i*Math.PI/6;const x=128+88*Math.cos(a),y=128+88*Math.sin(a);c.fillStyle=i%2?'#f4b73d':'#e86875';c.beginPath();c.ellipse(x,y,13,7,a,0,Math.PI*2);c.fill();}
-  c.fillStyle='#77c2c2';c.beginPath();c.arc(128,122, 61,0,Math.PI*2);c.fill();c.fillStyle='#f4cf69';c.beginPath();c.arc(151,93,17,0,Math.PI*2);c.fill();
-  c.fillStyle='#1e7352';c.beginPath();c.moveTo(65,163);c.quadraticCurveTo(105,100,148,160);c.lineTo(192,161);c.lineTo(192,191);c.lineTo(65,191);c.fill();
-  for(const [x,y,s] of [[104,129,1],[151,142,-1]]){c.save();c.translate(x,y);c.scale(s,1);c.fillStyle='#e45435';c.beginPath();c.ellipse(0,0,16,10,-.2,0,Math.PI*2);c.fill();c.beginPath();c.arc(12,-9,8,0,Math.PI*2);c.fill();c.fillStyle='#ffe7a6';c.beginPath();c.moveTo(17,-10);c.lineTo(28,-7);c.lineTo(17,-4);c.fill();c.fillStyle='#fff';c.beginPath();c.arc(13,-11,2,0,7);c.fill();c.restore();}
+  if(theme==='peacock'){for(let i=0;i<9;i++){const a=Math.PI*(1.1+i*.1),x=128+70*Math.cos(a),y=150+70*Math.sin(a);c.fillStyle=i%2?'#2fb5a3':'#3a7bd5';c.beginPath();c.ellipse(x,y,16,30,a+Math.PI/2,0,Math.PI*2);c.fill();c.fillStyle='#f4cf69';c.beginPath();c.arc(x,y,6,0,7);c.fill();}c.fillStyle='#1f6fb2';c.beginPath();c.ellipse(128,150,18,34,0,0,Math.PI*2);c.fill();c.beginPath();c.arc(128,108,12,0,7);c.fill();}
+  else if(theme==='tiger'){c.fillStyle='#f08a24';c.beginPath();c.ellipse(138,135,66,40,0,0,Math.PI*2);c.fill();c.beginPath();c.arc(72,112,26,0,7);c.fill();c.strokeStyle='#1b1b1b';c.lineWidth=6;for(let i=0;i<6;i++){c.beginPath();c.moveTo(100+i*15,100);c.quadraticCurveTo(105+i*15,135,97+i*15,170);c.stroke();}c.fillStyle='#fff';c.beginPath();c.arc(64,106,4,0,7);c.fill();}
+  else if(theme==='city'){c.fillStyle='#f4cf69';c.beginPath();c.arc(185,70,20,0,7);c.fill();for(let i=0;i<8;i++){const h=40+((i*37)%70);c.fillStyle=i%2?'#e86875':'#77c2c2';c.fillRect(40+i*22,190-h,18,h);c.fillStyle='#ffe6a1';for(let w=0;w<3;w++)c.fillRect(44+i*22,198-h+w*14,4,5);}}
+  else{
+   c.fillStyle='#77c2c2';c.beginPath();c.arc(128,122, 61,0,Math.PI*2);c.fill();c.fillStyle='#f4cf69';c.beginPath();c.arc(151,93,17,0,Math.PI*2);c.fill();
+   c.fillStyle='#1e7352';c.beginPath();c.moveTo(65,163);c.quadraticCurveTo(105,100,148,160);c.lineTo(192,161);c.lineTo(192,191);c.lineTo(65,191);c.fill();
+   for(const [x,y,s] of [[104,129,1],[151,142,-1]]){c.save();c.translate(x,y);c.scale(s,1);c.fillStyle='#e45435';c.beginPath();c.ellipse(0,0,16,10,-.2,0,Math.PI*2);c.fill();c.beginPath();c.arc(12,-9,8,0,Math.PI*2);c.fill();c.fillStyle='#ffe7a6';c.beginPath();c.moveTo(17,-10);c.lineTo(28,-7);c.lineTo(17,-4);c.fill();c.fillStyle='#fff';c.beginPath();c.arc(13,-11,2,0,7);c.fill();c.restore();}
+  }
   c.fillStyle='#ffe6a1';c.font='bold 21px sans-serif';c.textAlign='center';c.fillText('ঢাকা',128,220);
- }));return artMat;
+ }));artMats.set(theme,mat);return mat;
 }
 
-export function createVehicle(kind:string,color=0x2a968c):Model {
+export function createVehicle(kind:string,color=0x2a968c,look:VehicleLook={}):Model {
+ // Paint recolours the frame or body; on a rickshaw it recolours the hood instead.
+ if(kind!=='rickshaw'&&look.paint!==undefined)color=look.paint;
  const g=new T.Group() as Model; const wheels:T.Group[]=[];g.userData.wheels=wheels;g.userData.kind=kind;
  if(kind==='bicycle'||kind==='rickshaw'||kind==='motorbike'){
   const motor=kind==='motorbike',rick=kind==='rickshaw';const r=motor?.4:.43;
@@ -142,6 +151,7 @@ export function createVehicle(kind:string,color=0x2a968c):Model {
   const frame=color;
   for(const [a,b] of [[[0,r,.8],[0,1,.24]],[[0,1,.24],[0,.42,-.05]],[[0,.42,-.05],[0,r,.8]],[[0,1,.24],[0,1.08,-.64]],[[0,1.08,-.64],[0,.42,-.05]],[[0,1.08,-.64],[0,r,-.83]]] as number[][][])tube(g,a,b,motor?.09:.038,frame);
   tube(g,[0,1.08,-.64],[0,1.28,-.77],.032,chrome);tube(g,[-.36,1.28,-.77],[.36,1.28,-.77],.03,chrome);
+  if(look.extra==='streamers')for(const s of [-1,1])for(const [c,dz] of [[0xe8473c,0],[0xf2c12e,.05]] as const)tube(g,[s*.36,1.28,-.77+dz],[s*.44,1.02,-.68+dz],.012,c,5);
   box(g,0,1.05,.23,.3,.065,.35,0x26332f);box(g,0,.6,.93,.09,.15,.05,0xd63e26);
   if(motor){sphere(g,0,.84,-.22,.32,frame,.8,.72,1.4);box(g,0,.46,.1,.4,.3,.5,ink);tube(g,[.25,.4,0],[.25,.4,.9],.075,chrome);sphere(g,0,1.1,-.9,.15,0xffe3a0);}
   if(!motor){
@@ -158,23 +168,25 @@ export function createVehicle(kind:string,color=0x2a968c):Model {
     const chain=new T.Mesh(new T.TorusGeometry(.145,.012,4,16),material(chrome,.5));chain.rotation.y=Math.PI/2;chain.position.set(.08,.43,-.03);g.add(chain);
     tube(g,[.10,.30,-.03],[.10,.37,.8],.01,ink,5);tube(g,[.10,.57,-.03],[.10,.49,.8],.01,ink,5);
     box(g,0,.81,1.055,.08,.12,.025,0xe45633);
+    if(look.extra==='basket'){box(g,0,1.05,-.98,.44,.26,.32,0xb08a4f);for(const s of [-1,1])tube(g,[s*.2,.92,-.9],[s*.2,1.18,-.9],.012,0x8a6a3a);}
   }
-  const person=rider(g,0xd69d45,rick?-.25:0,motor);g.userData.legs=person.legs;g.userData.rider=person.g;
+  const person=rider(g,look.outfit?.shirt??0xd69d45,rick?-.25:0,motor,look.outfit?.lower,look.outfit?.accent,look.extra==='red-helmet'?0xc8322b:undefined);g.userData.legs=person.legs;g.userData.rider=person.g;
   if(rick){
     box(g,0,.63,.82,1.35,.2,1.12,0xc8473c);box(g,0,.86,.79,1.2,.27,.72,0xd65657);box(g,0,1.17,1.23,1.27,.72,.1,0x1b6858);
-    box(g,0,1.13,1.291,1.12,.65,.012,rickshawArt());
+    box(g,0,1.13,1.291,1.12,.65,.012,rickshawArt(look.art));
     // Arched hood, decorated rear-facing panel and brass supports.
     const arch=new T.Shape();arch.moveTo(-.69,0);arch.absarc(0,0,.69,Math.PI,0,true);arch.lineTo(.69,-.05);arch.absarc(0,-.05,.64,0,Math.PI,false);arch.closePath();
     const hoodGeo=new T.ExtrudeGeometry(arch,{depth:1.04,bevelEnabled:false,curveSegments:14});
-    const hood=new T.Mesh(hoodGeo,material(0x155b53));hood.position.set(0,1.54,.33);hood.castShadow=true;g.add(hood);
+    const hood=new T.Mesh(hoodGeo,material(look.paint??0x155b53));hood.position.set(0,1.54,.33);hood.castShadow=true;g.add(hood);
     const rearArch=new T.Shape();rearArch.moveTo(-.65,0);rearArch.absarc(0,0,.65,Math.PI,0,true);rearArch.lineTo(.65,-.48);rearArch.lineTo(-.65,-.48);rearArch.closePath();
     const panelGeo=new T.ShapeGeometry(rearArch,18);const positions=panelGeo.getAttribute('position'),uv=panelGeo.getAttribute('uv');
     for(let i=0;i<positions.count;i++)uv.setXY(i,(positions.getX(i)+.65)/1.3,(positions.getY(i)+.48)/1.13);
-    const rearPanel=new T.Mesh(panelGeo,rickshawArt());rearPanel.position.set(0,1.54,1.385);g.add(rearPanel);
+    const rearPanel=new T.Mesh(panelGeo,rickshawArt(look.art));rearPanel.position.set(0,1.54,1.385);g.add(rearPanel);
     for(const zz of [.33,1.37]){const trim=new T.Mesh(new T.TorusGeometry(.69,.025,5,24,Math.PI),material(0xe8b74c));trim.position.set(0,1.54,zz);g.add(trim);}
     for(const sign of [-1,1])for(let i=0;i<5;i++)sphere(g,sign*.7,1.48,.38+i*.23,.036,i%2?0xe98a6a:0xf1c668);
     for(const s of [-1,1]){tube(g,[s*.65,.73,.3],[s*.65,1.6,.3],.03,0xefbb54);tube(g,[s*.65,.7,1.26],[s*.65,1.61,1.26],.03,0xefbb54);}
     for(let i=0;i<9;i++){sphere(g,(i-4)*.15,1.57+Math.sqrt(Math.max(0,.55-((i-4)*.15)**2)),1.44,.043,i%2?0xf6c659:0xe65d60);}
+    if(look.extra==='garland')for(let i=0;i<=14;i++){const a=Math.PI*i/14;sphere(g,Math.cos(a)*.74,1.54+Math.sin(a)*.74,.3,.055,i%2?0xff5d8f:0xffd34d);}
   }
  } else {
   const bus=kind==='bus',truck=kind==='truck',cng=kind==='cng';
@@ -219,7 +231,7 @@ export function createVehicle(kind:string,color=0x2a968c):Model {
       for(let i=0;i<6;i++)box(g,0,.67+i*.055,-len/2-.045,w*.6,.02,.03,0x163b38);
       box(g,0,2.27,-len/2-.05,w*.80,.20,.026,busDecoration());
     }else{
-      const tail=new T.Mesh(new T.PlaneGeometry(w*.78,.56),truckDecoration());tail.position.set(0,1.58,len/2+.04);g.add(tail);
+      const tail=new T.Mesh(new T.PlaneGeometry(w*.78,.56),truckDecoration(look.art));tail.position.set(0,1.58,len/2+.04);g.add(tail);
       for(const side of [-1,1])for(let i=0;i<4;i++)tube(g,[side*w*.42,.84,2.65],[side*w*.42,2.25,1.6-i*.5],.012,0x927a4f,5);
       for(let i=0;i<6;i++)capsule(g,(i%2?1:-1)*.46,2.18+Math.floor(i/2)*.20,.4+Math.floor(i/2)*.57,.49,.22,.46,0xab9b68);
     }
@@ -242,15 +254,17 @@ function busDecoration(){
  for(const x of [38,474])for(let i=0;i<6;i++){c.save();c.translate(x,64);c.rotate(i*Math.PI/3);c.fillStyle=i%2?'#eb704b':'#f2bf59';c.beginPath();c.ellipse(0,14,5,11,0,0,Math.PI*2);c.fill();c.restore();}
  }));return busArt;
 }
-let truckArt:T.MeshStandardMaterial;
-function truckDecoration(){
- if(truckArt)return truckArt;
- truckArt=textured(canvasTexture(512,160,c=>{
- c.fillStyle='#ad6236';c.fillRect(0,0,512,160);c.strokeStyle='#f3cd72';c.lineWidth=8;c.strokeRect(6,6,500,148);
+const truckArts=new Map<string,T.MeshStandardMaterial>();
+function truckDecoration(theme='classic'){
+ const cached=truckArts.get(theme);if(cached)return cached;
+ const mat=textured(canvasTexture(512,160,c=>{
+ c.fillStyle=({classic:'#ad6236',rose:'#8a2f4a',peacock:'#1f5f7a'} as Record<string,string>)[theme]??'#ad6236';c.fillRect(0,0,512,160);c.strokeStyle='#f3cd72';c.lineWidth=8;c.strokeRect(6,6,500,148);
  c.fillStyle='#fbe6a9';c.textAlign='center';c.font='bold 44px "Noto Sans Bengali",sans-serif';c.fillText('ধীরে চলুন',256,73);
  c.font='bold 25px "Noto Sans Bengali",sans-serif';c.fillText('বাংলাদেশ • ঢাকা',256,122);
- for(const x of [47,465]){c.fillStyle='#246e66';c.beginPath();c.ellipse(x,80,23,54,0,0,Math.PI*2);c.fill();c.fillStyle='#eeb950';c.beginPath();c.arc(x,77,14,0,Math.PI*2);c.fill();}
- }));return truckArt;
+ if(theme==='rose'){for(const x of [47,465]){for(let i=0;i<6;i++){c.fillStyle=i%2?'#f26b8a':'#ffd1dc';c.beginPath();c.arc(x+Math.cos(i)*14,80+Math.sin(i)*14,14,0,7);c.fill();}c.fillStyle='#f4cf69';c.beginPath();c.arc(x,80,9,0,7);c.fill();}}
+ else if(theme==='peacock'){for(const x of [47,465])for(let i=0;i<7;i++){const a=Math.PI*(1.15+i*.12);c.fillStyle=i%2?'#2fb5a3':'#f4cf69';c.beginPath();c.ellipse(x+40*Math.cos(a),110+40*Math.sin(a),8,18,a+Math.PI/2,0,7);c.fill();}}
+ else for(const x of [47,465]){c.fillStyle='#246e66';c.beginPath();c.ellipse(x,80,23,54,0,0,Math.PI*2);c.fill();c.fillStyle='#eeb950';c.beginPath();c.arc(x,77,14,0,Math.PI*2);c.fill();}
+ }));truckArts.set(theme,mat);return mat;
 }
 export function animateVehicle(g:Model,time:number,speed:number,steer=0) {
  const previous=typeof g.userData.animationTime==='number'?g.userData.animationTime:time;
