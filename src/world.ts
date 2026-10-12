@@ -2,8 +2,9 @@ import * as T from 'three';
 import {box,sphere,tube,material,canvasTexture,textured,mergeStatic,createVehicle,coinParts,snackModel,type VehicleLook,animateVehicle,pedestrian,type Model,disposeModel,seatedCow,roadHazard,animatePedestrian} from './models';
 import {Simulation,VEHICLES} from './simulation';
 import {SHAKE_SECONDS,landingSquash,magnetOpacity,shakeOffset} from './feel';
+import {ChunkBender,pathX} from './bend';
 
-export const pathX=(z:number)=>Math.sin(z*.008)*5+Math.sin(z*.019)*1.8;
+export {pathX};
 const facades=[0xd99570,0xe8c28c,0xc98591,0x65aaa0,0xe0a48b,0xb5c7bb];
 const pennants=[0xe7704c,0x32a08d,0xf0bd51].map(color=>new T.MeshStandardMaterial({color,side:T.DoubleSide}));
 type Neighborhood='riverfront'|'bazaar'|'boulevard';
@@ -36,6 +37,8 @@ export class World {
  private scenery:T.Group;private quality='auto';private scale=1;private frameAvg=16;private frames=0;
  private dust:T.Points;private reduced=false;private shakeRemaining=0;private shakeAmplitude=0;private sinceLanding=Infinity;
  private coinMeshes:T.InstancedMesh[]=[];private snackModels=new Map<number,Model>();private dummy=new T.Object3D();private magnetField=new T.Group();private magnetRipples:T.Mesh[]=[];private streaks!:T.InstancedMesh;private haloMaterials=new Map<string,T.SpriteMaterial>();private haloTexture?:T.Texture;
+ // Each district's seven street blocks are built once (ahead of time when the garage is idle) and swapped in, never rebuilt mid-ride.
+ private pools:Record<Neighborhood,(T.Group|undefined)[]>={bazaar:[],riverfront:[],boulevard:[]};private bender=new ChunkBender();private lastRideFrame=-Infinity;private warmed=false;
  private look:VehicleLook={};private lookKey='{}';private builtLookKey='';
  constructor(canvas:HTMLCanvasElement){
   this.renderer=new T.WebGLRenderer({canvas,antialias:true,powerPreference:'high-performance'});
@@ -49,12 +52,12 @@ export class World {
   this.makeRoad();
   this.coinMeshes=([1,5] as const).map(v=>{const p=coinParts(v);const m=new T.InstancedMesh(p.geometry,p.materials,256);m.count=0;m.frustumCulled=false;m.castShadow=true;this.scene.add(m);return m;});
   this.makeMagnetField();this.makeStreaks();
-  for(let i=0;i<7;i++){const chunk=this.makeChunk(i,'bazaar');chunk.position.z=-i*48;this.chunks.push(chunk);this.scenery.add(chunk);}
+  for(let i=0;i<7;i++){const chunk=this.pooled(i,'bazaar');chunk.position.z=-i*48;this.chunks.push(chunk);this.scenery.add(chunk);}
   this.makePalace();this.scene.add(this.palace);
   this.player=createVehicle('bicycle');this.scene.add(this.player);
   const dustPos=[];for(let i=0;i<85;i++)dustPos.push((rand(i+801)-.5)*24,rand(i+802)*8, -rand(i+803)*65);
   const dg=new T.BufferGeometry();dg.setAttribute('position',new T.Float32BufferAttribute(dustPos,3));this.dust=new T.Points(dg,new T.PointsMaterial({color:0xffe7af,size:.06,transparent:true,opacity:.48,depthWrite:false}));this.scene.add(this.dust);
-  this.resize();
+  this.resize();this.scheduleWarmUp();
  }
  private makeRoad(){
   const road=new T.Group();const surface=canvasTexture(512,512,c=>{
@@ -78,6 +81,27 @@ export class World {
   const land=new T.Mesh(new T.PlaneGeometry(1200,4000),material(0x949b84));land.rotation.x=-Math.PI/2;land.position.y=-.09;this.scene.add(land);
   for(let i=0;i<220;i++){const z=20-i*7;box(road,pathX(z),.012,z,.09,.018,2.1,0xc9b991);for(const side of [-1,1]){const gutter=box(road,pathX(z)+side*5.65,.008,z,.7,.012,7.2,0x858775);gutter.rotation.y=Math.atan(.04*Math.cos(z*.008)+.0342*Math.cos(z*.019));}}
   mergeStatic(road);this.scene.add(road);
+ }
+ private pooled(slot:number,district:Neighborhood){return this.pools[district][slot]??=this.makeChunk(slot,district);}
+ // Builds one missing block per idle moment outside a ride, then compiles every shader the ride will need, so a
+ // district change or the first frame never stalls on building geometry or compiling programs.
+ private scheduleWarmUp(){
+  if(this.warmed)return;const later=(f:()=>void)=>'requestIdleCallback' in globalThis?requestIdleCallback(f,{timeout:1500}):setTimeout(f,120);
+  later(()=>{
+   if(performance.now()-this.lastRideFrame<1000){setTimeout(()=>this.scheduleWarmUp(),1000);return;}
+   const missing=(['riverfront','boulevard','bazaar'] as Neighborhood[]).flatMap(d=>Array.from({length:7},(_,slot)=>[d,slot] as const)).find(([d,slot])=>!this.pools[d][slot]);
+   if(missing){this.pooled(missing[1],missing[0]);this.scheduleWarmUp();return;}
+   this.warmed=true;this.compileAll();
+  });
+ }
+ private compileAll(){
+  const extras:T.Object3D[]=[];
+  for(const d of Object.keys(this.pools) as Neighborhood[])for(const c of this.pools[d])if(c&&!c.parent){this.scenery.add(c);extras.push(c);}
+  const hidden=this.scenery.children.filter(c=>!c.visible);hidden.forEach(c=>c.visible=true);
+  const samples=(['bus','truck','cng','car','rickshaw','bicycle','motorbike'] as const).map(k=>createVehicle(k,0x378e84));samples.push(pedestrian(0xd2ba8b,1,true),seatedCow(1),roadHazard('pothole',1.6,1.4,1),roadHazard('paan',1.6,1.4,2));
+  samples.forEach(m=>this.scene.add(m));
+  this.renderer.compile(this.scene,this.camera);
+  samples.forEach(m=>disposeModel(m));extras.forEach(c=>this.scenery.remove(c));hidden.forEach(c=>c.visible=false);
  }
  private makeChunk(seed:number,neighborhood:Neighborhood){
   const g=neighborhood==='bazaar'?this.makeBazaar(seed):neighborhood==='riverfront'?this.makeRiverfront(seed):this.makeBoulevard(seed);
@@ -316,19 +340,6 @@ export class World {
   box(g,x,2.65,z,1.25,.08,2.0,0xd2a951);
   const seller=pedestrian(0xeac693);seller.position.set(x+(x<0?-.52:.52),.1,z+.30);g.add(seller);
  }
- private bendChunk(g:T.Group){
-  if(g.userData.bentAt===g.position.z)return;
-  g.userData.bentAt=g.position.z;
-  g.traverse(o=>{if(!(o instanceof T.Mesh))return;const attr=o.geometry.getAttribute('position'),normal=o.geometry.getAttribute('normal');
-   if(!o.userData.straightPositions){o.userData.straightPositions=new Float32Array(attr.array);if(normal)o.userData.straightNormals=new Float32Array(normal.array);}
-   const positions=o.userData.straightPositions as Float32Array,normals=o.userData.straightNormals as Float32Array|undefined;
-   for(let i=0;i<attr.count;i++){
-    const z=positions[i*3+2]+g.position.z;attr.setX(i,positions[i*3]+pathX(z));
-    if(normal&&normals){const slope=.04*Math.cos(z*.008)+.0342*Math.cos(z*.019),nx=normals[i*3],ny=normals[i*3+1],nz=normals[i*3+2]-slope*nx,l=Math.hypot(nx,ny,nz)||1;normal.setXYZ(i,nx/l,ny/l,nz/l);}
-   }
-   attr.needsUpdate=true;if(normal)normal.needsUpdate=true;o.geometry.computeBoundingSphere();o.geometry.computeBoundingBox();
-  });
- }
  private tree(g:T.Group,x:number,z:number,seed:number){tube(g,[x,0,z],[x+.2,5,z],.17,0x6b6347);for(let i=0;i<6;i++){const a=i*Math.PI/3;const leaf=sphere(g,x+Math.cos(a)*.95,5.3+rand(seed+i)*.8,z+Math.sin(a)*.95,1.15,[0x748255,0x4a7252,0x788954][i%3],1.2,.7,1);leaf.castShadow=true;}}
  private makePalace(){
   const g=this.palace;const pink=0xe395a1,trim=0xffc4b6,dark=0x715975;
@@ -384,9 +395,12 @@ export class World {
    while(chunkZ-z>55)chunkZ-=48*this.chunks.length;
    while(chunkZ-z<-290)chunkZ+=48*this.chunks.length;
    const district=sim.neighborhoodAt(Math.max(0,-chunkZ+24));
-   if(c.userData.neighborhood!==district){disposeModel(c);c=this.makeChunk(Math.abs(Math.round(chunkZ/48)),district);this.chunks[i]=c;this.scenery.add(c);}
-   c.position.set(0,0,chunkZ);c.rotation.y=0;this.bendChunk(c);
+   if(c.userData.neighborhood!==district){this.scenery.remove(c);c=this.pooled(i,district);this.chunks[i]=c;this.scenery.add(c);}
+   c.position.set(0,0,chunkZ);c.rotation.y=0;this.bender.queue(c);
+   // A block still bending is finished outright once it nears the far plane (always at a ride's first frame).
+   if(z-chunkZ<this.camera.far+10)this.bender.finish(c);
   }
+  this.bender.work(3);if(moving)this.lastRideFrame=performance.now();
   this.district=sim.neighborhood;
   this.palace.visible=Math.abs(this.palace.position.z-z)<190;
   const lightTint=this.district==='bazaar'?0xffd5aa:this.district==='riverfront'?0xffe4bd:0xffeace;
