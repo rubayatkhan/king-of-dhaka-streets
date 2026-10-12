@@ -2,7 +2,7 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
-import { ffmpegArgs, ffprobeArgs, outputPath, parseArgs, tooLong, withVoice } from './voice-tools.ts';
+import { MAX_TAKE_SECONDS, ffmpegArgs, ffprobeArgs, outputPath, parseArgs, tooLong, withVoice } from './voice-tools.ts';
 
 const MANIFEST = 'public/audio/voices/manifest.json';
 try {
@@ -18,7 +18,7 @@ try {
   if (!Number.isFinite(seconds)) { rmSync(draft, { force: true }); throw new Error("Couldn't read how long that recording is."); }
   if (tooLong(seconds)) {
     rmSync(draft, { force: true });
-    throw new Error(`That recording is ${Math.round(seconds * 10) / 10} s long — trim it to your best take (under 4 s) and run this again.`);
+    throw new Error(`That recording is ${Math.round(seconds * 10) / 10} s long — trim it to your best take (under ${MAX_TAKE_SECONDS} s) and run this again.`);
   }
   renameSync(draft, output);
   const raw = existsSync(MANIFEST) ? JSON.parse(readFileSync(MANIFEST, 'utf8')) : {};

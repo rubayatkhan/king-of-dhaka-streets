@@ -12,6 +12,13 @@ describe('street voice lines', () => {
     expect(lineById('bus-helper-plastic')?.bangla).toBe('ওস্তাদ, বামে প্লাস্টিক!');
   });
 
+  it('uses the colloquial street wording the family approved, and an angry line for an actual crash', () => {
+    expect(lineById('tea-vendor')?.bangla).toBe('এই চা, গরম চা! খাইয়া যান, ভাই!');
+    expect(lineById('launch-caller')?.bangla).toBe('সদরঘাট! সদরঘাট! লঞ্চ ছাইড়া দিবো, তাড়াতাড়ি আহেন!');
+    expect(lineById('vegetable-vendor')?.bangla).toBe('তাজা সবজি! লাউ লন, টমেটো লন!');
+    expect(lineById('crash-chokhe')).toMatchObject({ bangla: 'চোখে দেহো না মিয়া?!', reaction: true });
+  });
+
   it('prefers the family recording, then the AI voice, then the caption alone', () => {
     const m = sanitizeManifest({ 'tea-vendor': { family: true, ai: true }, 'launch-caller': { ai: true } });
     expect(voiceSource('tea-vendor', m)).toBe('family');

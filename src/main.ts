@@ -37,7 +37,7 @@ const districts:Record<Neighborhood,{name:string;bangla:string;tag:string}>={baz
 const deference=['Find your own gap','A little room for a rickshaw','Small traffic starts to yield','Your presence opens a lane','The city makes way for the king'];
 const audio=new GameAudio();audio.setMuted(save.muted);audio.onCaption=line=>{if(line.reaction)return;$('#street-caption').innerHTML=`<b lang="bn">${line.bangla}</b><span>${line.caption}</span>`;$('#hud').style.setProperty('--flavour-top',`${Math.round(innerHeight-$('#authority-hud').getBoundingClientRect().top)}px`);$('#street-caption').classList.add('shown');captionUntil=performance.now()+3200;};
 let leftHeld=false,rightHeld=false;
-let steer=0,brake=false,desired=0,accumulator=0,last=performance.now(),screen='menu',toastUntil=0,feedbackUntil=0,nudgeUntil=0,seed=27,ending=false,nextVendor=12,splashUntil=0,swerveUntil=0,hornUntil=0,comboUntil=0,districtUntil=0,lastDistrict:Neighborhood=sim.neighborhood,toastPriority=0,lastFailure='',passes=0,callCount=0,nextDistrict='',captionUntil=0;
+let steer=0,brake=false,desired=0,accumulator=0,last=performance.now(),screen='menu',toastUntil=0,feedbackUntil=0,nudgeUntil=0,seed=27,ending=false,nextVendor=12,splashUntil=0,swerveUntil=0,hornUntil=0,comboUntil=0,districtUntil=0,lastDistrict:Neighborhood=sim.neighborhood,toastPriority=0,lastFailure='',passes=0,callCount=0,shaveCalls=0,nextDistrict='',captionUntil=0;
 const clearCaption=()=>{captionUntil=0;$('#street-caption').classList.remove('shown');};
 const chipKinds=[['cha','☕','Cha speed'],['magnet','🧲','Taka magnet'],['belly','🍢','Full belly'],['stomach','🤢','পেট গুড়গুড়!']] as const;
 const keys=new Set<string>();const swipe=new SwipeRecognizer(innerWidth);
@@ -228,9 +228,9 @@ function frame(now:number){const dt=Math.min((now-last)/1000,.05);last=now;
   // The rear alert card itself carries these, so no toast stacks under it onto the rider on a short landscape screen.
   if(event.type==='rear-warning'){clearCaption();audio.warning('rear',(event.x??0)/5.3);}if(event.type==='rear-swerve'){clearCaption();audio.warning('rear',(event.x??0)/5.3);swerveUntil=now+2500;}
   if(event.type==='paan-warning'){clearCaption();audio.warning('paan',(event.x??0)/5.3);showToast(event.text,true);}
-  if(event.type==='crash'){lastFailure=event.text;if(/paan/i.test(event.text)){splashUntil=now+1900;$('#paan-splash').classList.add('splashed');}audio.impact();audio.say('easy-brother');showToast(event.text,true);$('#impact').classList.add('hit');feedbackUntil=now+260;}
+  if(event.type==='crash'){lastFailure=event.text;if(/paan/i.test(event.text)){splashUntil=now+1900;$('#paan-splash').classList.add('splashed');}audio.impact();audio.say('crash-chokhe');showToast(event.text,true);$('#impact').classList.add('hit');feedbackUntil=now+260;}
   if(event.type==='coin')audio.coin(event.chain??1,event.value===5?5:1);if(event.type==='snack'){audio.snack(event.kind??'cha');if(event.kind==='cha')audio.say('cha-ah');showToast(event.text);}if(event.type==='stomach'){audio.stomach();audio.say('stomach-gurgur');showToast(event.text,true);}if(event.type==='belly'){audio.belly();showToast(event.text);}
-  if(event.type==='near-miss'){audio.nearMiss(sim.combo);audio.say('near-miss-banchlam');$('#combo').innerHTML=`<small>বাঁচলাম!</small>${event.text}`;$('#combo').classList.add('visible','close-shave');comboUntil=now+1500;}
+  if(event.type==='near-miss'){audio.nearMiss(sim.combo);audio.say(++shaveCalls%2?'easy-brother':'near-miss-banchlam');$('#combo').innerHTML=`<small>বাঁচলাম!</small>${event.text}`;$('#combo').classList.add('visible','close-shave');comboUntil=now+1500;}
   if(event.type==='pass'){const kind=sim.traffic.find(t=>t.id===event.actorId)?.kind;if(kind)audio.cue(passCue(kind,++passes));}
   if(event.type==='pass'&&now>comboUntil){$('#combo').textContent=event.text;$('#combo').classList.remove('close-shave');$('#combo').classList.add('visible');comboUntil=now+900;}
   if(event.type==='win'||event.type==='lose'){if(event.type==='lose')lastFailure=event.text;finish();}

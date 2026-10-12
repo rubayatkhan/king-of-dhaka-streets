@@ -45,9 +45,9 @@ These are the street voices in King of Dhaka Streets. Each line plays the family
 - **How:** A rickshaw-puller asking a passer-by, friendly and a little tired.
 
 ### `tea-vendor`
-- **Bangla:** এই, চা! গরম চা! এক কাপ নিয়ে যান!
-- **Say it:** Ei, cha! Gorom cha! Ek kap niye jan!
-- **Meaning:** Hot tea, fresh from the kettle!
+- **Bangla:** এই চা, গরম চা! খাইয়া যান, ভাই!
+- **Say it:** Ei cha, gorom cha! Khaiya jan, bhai!
+- **Meaning:** Hot tea! Have a cup, brother!
 - **How:** A tea seller at a street stall, calling out over the clink of glasses.
 
 ### `badam-seller`
@@ -57,8 +57,8 @@ These are the street voices in King of Dhaka Streets. Each line plays the family
 - **How:** A peanut seller walking with a basket, a long call that rises at the end.
 
 ### `launch-caller`
-- **Bangla:** সদরঘাট! সদরঘাট! লঞ্চ ছাড়বে, তাড়াতাড়ি আসেন!
-- **Say it:** Sadarghat! Sadarghat! Launch charbe, taratari ashen!
+- **Bangla:** সদরঘাট! সদরঘাট! লঞ্চ ছাইড়া দিবো, তাড়াতাড়ি আহেন!
+- **Say it:** Sadarghat! Sadarghat! Launch chaira dibo, taratari ahen!
 - **Meaning:** Sadarghat! The launch is leaving, hurry!
 - **How:** A man at the river terminal shouting that the ferry is about to leave, urgent.
 
@@ -69,8 +69,8 @@ These are the street voices in King of Dhaka Streets. Each line plays the family
 - **How:** A boatman calling from the river steps, relaxed and drawn out.
 
 ### `vegetable-vendor`
-- **Bangla:** তাজা সবজি! লাউ নেন, টমেটো নেন!
-- **Say it:** Taja shobji! Lau nen, tomato nen!
+- **Bangla:** তাজা সবজি! লাউ লন, টমেটো লন!
+- **Say it:** Taja shobji! Lau lon, tomato lon!
 - **Meaning:** Fresh vegetables! Gourds, tomatoes!
 - **How:** A vegetable seller at the wholesale market, brisk and loud.
 
@@ -84,7 +84,13 @@ These are the street voices in King of Dhaka Streets. Each line plays the family
 - **Bangla:** আস্তে ভাই, একটু জায়গা দেন!
 - **Say it:** Aste bhai, ektu jayga den!
 - **Meaning:** Easy, brother, give a little room!
-- **How:** Someone you just bumped, annoyed but not angry.
+- **How:** Someone you only just squeezed past, annoyed but not angry.
+
+### `crash-chokhe`
+- **Bangla:** চোখে দেহো না মিয়া?!
+- **Say it:** Chokhe deho na miya?!
+- **Meaning:** Can't you see where you're going?!
+- **How:** Someone you actually hit: more than a little annoyed, almost angry, shouting at the rider.
 
 ### `cha-ah`
 - **Bangla:** আহ্!

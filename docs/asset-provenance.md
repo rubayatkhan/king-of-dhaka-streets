@@ -14,17 +14,7 @@ The setting is an artistic compression inspired by Old Dhaka. Reference sources:
 Creative brief: cinematic golden-hour Old Dhaka lane, a rear-view cyclist in an ochre shirt on a teal bicycle, hand-painted rickshaw at left, teal bus at right, layered historic shopfronts with Bangla signs and striped awnings, tangled wires, warm weathered plaster, lively street details, and pink Ahsan Manzil across the distant opening. Teal, ochre, terracotta and cream palette; no HUD in the source art. Composition reserves space for the game's title and controls.
 
 ## Audio
-Five original text-to-speech assets were generated with the connected HeyGen service on September 11, 2026, using its public multilingual voice “Daran outside walking” (voice ID `0ac81e725f4948dfa9638ceca216bcfa`). These are synthetic voices, not recordings of Dhaka residents. No voice was cloned for the project.
-
-| File | Text | Requested language | Speed |
-| --- | --- | --- | --- |
-| `public/audio/voices/ai/bus-helper-plastic.mp3` | ওস্তাদ, বামে প্লাস্টিক! | bn | 1.12 |
-| `public/audio/voices/ai/tea-vendor.mp3` | এই, চা! গরম চা! এক কাপ নিয়ে যান! | bn | 1.10 |
-| `public/audio/voices/ai/easy-brother.mp3` | আস্তে ভাই, একটু জায়গা দেন! | bn | 1.08 |
-| `public/audio/voices/ai/launch-caller.mp3` | সদরঘাট! সদরঘাট! লঞ্চ ছাড়বে, তাড়াতাড়ি আসেন! | bn | 1.12 |
-| `public/audio/voices/ai/vegetable-vendor.mp3` | তাজা সবজি! লাউ নেন, টমেটো নেন! | bn | 1.15 |
-
-Converted on 2026-10-12 from the original WAV deliveries to mono 64 kbps MP3, loudness-normalized to −16 LUFS.
+The five HeyGen text-to-speech clips shipped earlier (September 11, 2026) were **retired on 2026-10-12**: a native-speaker listening review found them unusable. They were replaced by the ElevenLabs placeholders described under "Street voices (ElevenLabs placeholders)" below.
 
 Vehicle/warning effects and additional environmental textures are original Web Audio synthesis. Native-speaker pronunciation, idiom and delivery review remains pending. The app identifies the Bangla calls as AI-generated.
 
@@ -52,4 +42,16 @@ The interface requests Barlow Condensed, DM Sans and Noto Sans Bengali through G
 - **Effects, bells, horns and district soundscapes** (`src/soundbank.ts`, `src/soundscape.ts`) are original Web Audio synthesis written for this project. There are no samples. The shapes imitate Dhaka street sounds: poisha coins, tea glasses, the jhalmuri seller's tin, conch-shell workshop sawing, launch horns and the ice-cream cart bell. No religious or devotional sounds are used.
 - **Adaptive music** (`src/music.ts`) is an original arrangement synthesized in the browser: dhol, ektara, harmonium and bansuri voices on a 96 BPM grid. The tune is original.
 - **Generated district beds** (Eleven Music) are supported by `src/musicplayer.ts` and `public/audio/music/manifest.json`, but none have shipped yet. When they do, `scripts/loop-music.py` tempo-locks each to 96 BPM, cuts a 16-bar (40 s) loop with 30 ms fades, and levels it to −20 LUFS at 96 kbps. Each one will be recorded here with its prompt, date and plan terms.
-- **Street voices:** 17 lines are listed in `docs/voice-script.md`. Five use the existing HeyGen placeholders described above. The other twelve are caption-only until the family records them (`npm run add-voice`) or AI placeholders are generated.
+- **Street voices:** 18 lines are listed in `docs/voice-script.md`. Fourteen have ElevenLabs placeholders (below). Four are caption-only until the family records them: `bus-route-farmgate`, `badam-seller`, `boatman-nouka` and `auction-caller`.
+
+### Street voices (ElevenLabs placeholders), 2026-10-12
+- **How they were made:** generated with ElevenLabs text-to-speech, model `eleven_v3`, through the account owner's paid plan, which carries a commercial licence. They are synthetic voices, not recordings of Dhaka residents, and will be replaced by family recordings as those arrive.
+- **Approval:** each take was approved by the family, a native Bangla speaker, from two candidates, and the wording was made colloquial at their direction.
+- **Voices:**
+  - library voice *Rafiq – Upbeat, Blunt, Bright* (`COxU2hNeeEyjmWJ458OI`): bus helper, route calls, crowd cheer
+  - library voice *Arka – Playful, Cheerful, Bright* (`qmnNCqjY31p1KwGfAqgB`): the rider's reactions; an adult voice, because child voices are not generated
+  - two voices designed for this project with ElevenLabs Voice Design (`eleven_ttv_v3`) from a description of a colloquial, sun-worn Old Dhaka street hawker:
+    - *Dhaka Hawker – Colloquial Seller* (`kleqrnc29kGByD40TiEO`): tea seller, Sadarghat launch caller
+    - *Dhaka Rickshaw-puller – Colloquial* (`GPcGVxqu72FQZwkzFIyu`): rickshaw-puller, vegetable seller, close-shave and crash bystander
+- **Processing:** `npm run add-voice -- <id> <file> --ai`: silence trimmed at both ends, light denoise, −16 LUFS, mono 64 kbps MP3.
+- **Generation flow** (for re-takes): ElevenLabs flow `Ahb1cUOfkqjWXkntUDdY`.

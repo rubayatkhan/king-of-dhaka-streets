@@ -30,8 +30,8 @@ describe('adding a voice recording', () => {
   });
 
   it('rejects a recording longer than one take of a street call', () => {
-    expect(MAX_TAKE_SECONDS).toBe(4);
-    expect(tooLong(3.9)).toBe(false); expect(tooLong(4)).toBe(false); expect(tooLong(4.01)).toBe(true); expect(tooLong(11.4)).toBe(true);
+    expect(MAX_TAKE_SECONDS).toBe(6); // the longest street call (the Sadarghat launch caller) runs about 5 s
+    expect(tooLong(5.1)).toBe(false); expect(tooLong(6)).toBe(false); expect(tooLong(6.01)).toBe(true); expect(tooLong(11.4)).toBe(true);
     expect(tooLong(Number.NaN)).toBe(false);
   });
 });

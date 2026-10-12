@@ -1,7 +1,44 @@
 {
-  "bus-helper-plastic": { "ai": true },
-  "tea-vendor": { "ai": true },
-  "easy-brother": { "ai": true },
-  "launch-caller": { "ai": true },
-  "vegetable-vendor": { "ai": true }
+  "bus-helper-plastic": {
+    "ai": true
+  },
+  "tea-vendor": {
+    "ai": true
+  },
+  "easy-brother": {
+    "ai": true
+  },
+  "launch-caller": {
+    "ai": true
+  },
+  "vegetable-vendor": {
+    "ai": true
+  },
+  "bus-route-gulistan": {
+    "ai": true
+  },
+  "bus-route-motijheel": {
+    "ai": true
+  },
+  "cha-ah": {
+    "ai": true
+  },
+  "crash-chokhe": {
+    "ai": true
+  },
+  "crowd-king": {
+    "ai": true
+  },
+  "near-miss-banchlam": {
+    "ai": true
+  },
+  "pothole-uff": {
+    "ai": true
+  },
+  "rickshaw-mama": {
+    "ai": true
+  },
+  "stomach-gurgur": {
+    "ai": true
+  }
 }
