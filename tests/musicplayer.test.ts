@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MusicPlayer, StepScheduler, sanitizeBeds } from '../src/musicplayer';
+import { readFileSync } from 'node:fs';
 import { LOOP_SECONDS, STEP_SECONDS, STEPS_PER_BAR } from '../src/music';
 
 const BAR = STEP_SECONDS * STEPS_PER_BAR;
@@ -24,6 +25,9 @@ describe('bed manifest', () => {
     expect(sanitizeBeds({ bpm: 96, loopSeconds: 40, beds: { bazaar: 'bazaar.mp3', nope: 'x.mp3' } })).toEqual({ bpm: 96, loopSeconds: 40, beds: { bazaar: 'bazaar.mp3' } });
     expect(sanitizeBeds({ bpm: 100, loopSeconds: 40, beds: {} })).toBeUndefined();
     expect(sanitizeBeds(null)).toBeUndefined();
+  });
+  it('ships a valid empty manifest, so the page asks for no missing file until beds are mastered', () => {
+    expect(sanitizeBeds(JSON.parse(readFileSync('public/audio/music/manifest.json', 'utf8')))).toEqual({ bpm: 96, loopSeconds: 40, beds: {} });
   });
 });
 
