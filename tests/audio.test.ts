@@ -16,7 +16,7 @@ class MockNode {
   threshold = new MockParam(); knee = new MockParam(); ratio = new MockParam();
   attack = new MockParam(); release = new MockParam();
   buffer: MockBuffer | null = null;
-  loop = false; type = ''; onended?: () => void;
+  loop = false; type = ''; onended?: () => void; kettle?: boolean;
   connect = vi.fn((node: MockNode) => node);
   disconnect = vi.fn(); start = vi.fn(); stop = vi.fn();
 }
@@ -307,4 +307,27 @@ it('cancels scheduled noise bursts with the rest of the ride sounds', async () =
   expect(bursts.length).toBeGreaterThan(0);
   audio.setMuted(true);
   for (const b of bursts) expect(b.stop).toHaveBeenCalled();
+});
+
+it('whistles a rising kettle only while cha boosts a playing ride', async () => {
+  const audio = await initialized();
+  const kettle = () => context.createGain.mock.results.map(r => r.value as MockNode).find(g => g.kettle);
+  audio.update(10, 'bicycle', true, { neighborhood: 'bazaar', intensity: .5, effects: { boost: 4, boostFraction: .8, magnet: 0 } });
+  const gain = kettle()!.gain.setTargetAtTime.mock.calls.at(-1)![0];
+  expect(gain).toBeGreaterThan(0);
+  audio.update(10, 'bicycle', true, { neighborhood: 'bazaar', intensity: .5, effects: { boost: 0, boostFraction: 0, magnet: 0 } });
+  expect(kettle()!.gain.setTargetAtTime.mock.calls.at(-1)![0]).toBe(0);
+  audio.update(10, 'bicycle', true, { neighborhood: 'bazaar', intensity: .5, effects: { boost: 4, boostFraction: .8, magnet: 0 } });
+  documentMock.hidden = true; visibility();
+  expect(kettle()!.gain.setTargetAtTime.mock.calls.at(-1)![0]).toBe(0);
+});
+
+it('taps the jhalmuri tin every 0.9 s while the magnet lasts', async () => {
+  const audio = await initialized();
+  const street = (magnet: number) => ({ neighborhood: 'bazaar', intensity: .5, effects: { boost: 0, boostFraction: 0, magnet } });
+  const squares = () => context.createOscillator.mock.results.filter(r => (r.value as MockNode).type === 'square').length;
+  audio.update(10, 'bicycle', true, street(3)); const first = squares();
+  context.currentTime = .5; audio.update(10, 'bicycle', true, street(2.5)); expect(squares()).toBe(first);
+  context.currentTime = 1; audio.update(10, 'bicycle', true, street(2)); expect(squares()).toBeGreaterThan(first);
+  const after = squares(); context.currentTime = 3; audio.update(10, 'bicycle', true, street(0)); expect(squares()).toBe(after);
 });

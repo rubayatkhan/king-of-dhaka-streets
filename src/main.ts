@@ -202,7 +202,7 @@ function frame(now:number){const dt=Math.min((now-last)/1000,.05);last=now;
  if(swipe.takeJump())jump();steer+=((keyboard||swipe.steer||desired)-steer)*(1-Math.exp(-dt*17));
  accumulator+=dt;while(accumulator>=1/60){sim.update(1/60,{steer,brake:brake||swipe.brake||keys.has('ArrowDown')||keys.has('s')||keys.has(' ')});accumulator-=1/60;}
  const rear=sim.rearThreats.reduce<typeof sim.rearThreats[number]|undefined>((closest,t)=>!closest||t.timeToContact<closest.timeToContact?t:closest,undefined);
- audio.update(sim.speed,VEHICLES[selected].id,sim.status==='playing',{neighborhood:sim.neighborhood,intensity:.5+lesson*.22,rear:rear?{kind:rear.kind,urgency:rear.urgency,x:rear.x}:undefined,traffic:sim.traffic,playerZ:sim.z});
+ audio.update(sim.speed,VEHICLES[selected].id,sim.status==='playing',{neighborhood:sim.neighborhood,intensity:.5+lesson*.22,rear:rear?{kind:rear.kind,urgency:rear.urgency,x:rear.x}:undefined,traffic:sim.traffic,playerZ:sim.z,effects:{boost:sim.effects.boost,boostFraction:sim.effects.boost/Math.max(1,sim.powerUps.chaSeconds),magnet:sim.effects.magnet}});
  if(sim.status==='playing'&&sim.neighborhood!==lastDistrict){lastDistrict=sim.neighborhood;announceDistrict();}
  if(now>districtUntil||rear)$('#district-banner').classList.remove('visible');
  $('#rear-alert').classList.toggle('hidden',!rear||sim.status!=='playing');
@@ -210,15 +210,15 @@ function frame(now:number){const dt=Math.min((now-last)/1000,.05);last=now;
  if(sim.status==='playing'&&sim.elapsed>nextVendor){nextVendor+=18;if(now>toastUntil&&!rear){audio.say(sim.neighborhood==='riverfront'?'launch-caller':sim.neighborhood==='boulevard'?'vegetable-vendor':'tea-vendor');}}
  const events=sim.events.splice(0);
  for(const event of events){
-  if(event.type==='jump')audio.jump(VEHICLES[selected].id);if(event.type==='land')world?.land();if(event.type==='bump'){world?.shake(.35);world?.land();audio.bump();}
+  if(event.type==='jump')audio.jump(VEHICLES[selected].id);if(event.type==='land')world?.land();if(event.type==='bump'){world?.shake(.35);world?.land();audio.bump();audio.say('pothole-uff');}
   if(event.type==='horn'){hornUntil=now+250;$('#horn').classList.add('ringing');audio.horn(VEHICLES[selected].id);if(!rear)showToast(event.text);}
   if(event.type==='warning'){showToast(event.text);if(event.text.includes('Ostad'))audio.say('bus-helper-plastic');if(/cow|goru/i.test(event.text))audio.warning('cow',(event.x??0)/5.3);}
   // The rear alert card itself carries these, so no toast stacks under it onto the rider on a short landscape screen.
   if(event.type==='rear-warning')audio.warning('rear',(event.x??0)/5.3);if(event.type==='rear-swerve'){audio.warning('rear',(event.x??0)/5.3);swerveUntil=now+2500;}
   if(event.type==='paan-warning'){audio.warning('paan',(event.x??0)/5.3);showToast(event.text,true);}
   if(event.type==='crash'){lastFailure=event.text;if(/paan/i.test(event.text)){splashUntil=now+1900;$('#paan-splash').classList.add('splashed');}audio.impact();audio.say('easy-brother');showToast(event.text,true);$('#impact').classList.add('hit');feedbackUntil=now+260;}
-  if(event.type==='coin')audio.coin(event.chain??1,event.value===5?5:1);if(event.type==='snack'){audio.snack(event.kind??'cha');showToast(event.text);}if(event.type==='stomach'){audio.stomach();showToast(event.text,true);}if(event.type==='belly'){audio.belly();showToast(event.text);}
-  if(event.type==='near-miss'){audio.nearMiss(sim.combo);$('#combo').innerHTML=`<small>বাঁচলাম!</small>${event.text}`;$('#combo').classList.add('visible','close-shave');comboUntil=now+1500;}
+  if(event.type==='coin')audio.coin(event.chain??1,event.value===5?5:1);if(event.type==='snack'){audio.snack(event.kind??'cha');if(event.kind==='cha')audio.say('cha-ah');showToast(event.text);}if(event.type==='stomach'){audio.stomach();audio.say('stomach-gurgur');showToast(event.text,true);}if(event.type==='belly'){audio.belly();showToast(event.text);}
+  if(event.type==='near-miss'){audio.nearMiss(sim.combo);audio.say('near-miss-banchlam');$('#combo').innerHTML=`<small>বাঁচলাম!</small>${event.text}`;$('#combo').classList.add('visible','close-shave');comboUntil=now+1500;}
   if(event.type==='pass'&&now>comboUntil){$('#combo').textContent=event.text;$('#combo').classList.remove('close-shave');$('#combo').classList.add('visible');comboUntil=now+900;}
   if(event.type==='win'||event.type==='lose'){if(event.type==='lose')lastFailure=event.text;finish();}
  }

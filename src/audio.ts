@@ -7,6 +7,7 @@ export interface StreetAudioContext {
   rear?: { kind: string; urgency: number; x: number };
   traffic?: readonly { kind: string; x: number; z: number; speed: number }[];
   playerZ?: number;
+  effects?: { boost: number; boostFraction: number; magnet: number };
 }
 const finite = (value: number, fallback = 0) => Number.isFinite(value) ? value : fallback;
 const bound = (value: number, lo = 0, hi = 1) => Math.max(lo, Math.min(hi, finite(value)));
@@ -31,6 +32,8 @@ export class GameAudio {
   private river?: GainNode;
   private trafficEngines: EngineLayer[] = [];
   private rearEngine?: EngineLayer;
+  private kettle?: EngineLayer;
+  private nextTong = 0;
   private temporary = new Set<() => void>();
   private duckUntil = 0;
   private warningUntil = 0;
@@ -98,6 +101,12 @@ export class GameAudio {
       this.river = this.noiseLayer('lowpass', 550, 0, this.ambience);
       this.trafficEngines = [this.engineLayer(this.ambience), this.engineLayer(this.ambience)];
       this.rearEngine = this.engineLayer(this.master);
+      // A kettle whistle rises while cha's boost lasts.
+      const kettleOsc = ctx.createOscillator(), kettleGain = ctx.createGain(), kettlePan = ctx.createStereoPanner();
+      kettleOsc.type = 'sine'; kettleOsc.frequency.value = 1500; kettleGain.gain.value = 0;
+      (kettleGain as GainNode & { kettle?: boolean }).kettle = true;
+      kettleOsc.connect(kettleGain).connect(kettlePan).connect(this.master); kettleOsc.start();
+      this.kettle = { oscillator: kettleOsc, gain: kettleGain, pan: kettlePan };
 
       this.engine = ctx.createGain();
       this.engine.gain.value = 0;
@@ -175,6 +184,10 @@ export class GameAudio {
       this.nextRearHorn = now + 1.5 - urgency * 0.85;
       this.warning('rear', bound(rear.x / 5.3, -0.95, 0.95));
     }
+    const fx = street?.effects;
+    this.kettle?.gain.gain.setTargetAtTime(playing && (fx?.boost ?? 0) > 0 ? 0.012 : 0, now, 0.08);
+    this.kettle?.oscillator.frequency.setTargetAtTime(1500 + (1 - bound(fx?.boostFraction ?? 0)) * 900, now, 0.3);
+    if (playing && (fx?.magnet ?? 0) > 0 && now >= this.nextTong) { this.nextTong = now + 0.9; this.play(SOUNDS.jhalmuri); }
     this.wind?.gain.setTargetAtTime(movement * 0.2, now, 0.12);
     this.engine?.gain.setTargetAtTime(cycling ? 0 : 0.055 + movement * 0.065, now, 0.12);
     this.engineOsc?.frequency.setTargetAtTime((/truck/i.test(vehicle) ? 30 : 45) + movement * 75, now, 0.15);
@@ -377,6 +390,7 @@ export class GameAudio {
     const now = this.context?.currentTime ?? 0;
     this.ambience?.gain.setTargetAtTime(0, now, 0.025);
     this.rearEngine?.gain.gain.setTargetAtTime(0, now, 0.025);
+    this.kettle?.gain.gain.setTargetAtTime(0, now, 0.025); this.nextTong = 0;
   }
 
   private engineLayer(output: AudioNode): EngineLayer {
