@@ -332,6 +332,16 @@ it('taps the jhalmuri tin every 0.9 s while the magnet lasts', async () => {
   const after = squares(); context.currentTime = 3; audio.update(10, 'bicycle', true, street(0)); expect(squares()).toBe(after);
 });
 
+it('auditions voice lines and the street recording for the dev sound check', async () => {
+  const audio = await initialized();
+  expect(await audio.auditionVoice('bus-helper-plastic')).toBe(true);   // a line with audio plays
+  expect(await audio.auditionVoice('rickshaw-mama')).toBe(false);       // caption-only lines report so
+  expect(audio.auditionField(12)).toBe(true);
+  const field = context.sources.at(-1)!;
+  expect(field.start).toHaveBeenCalledWith(0, 12);
+  audio.stopAudition(); expect(field.stop).toHaveBeenCalled();
+});
+
 it('auditions any bank sound outside a ride for the dev sound check, but never while muted', async () => {
   const audio = await initialized();
   const before = context.sources.length + context.createOscillator.mock.calls.length;

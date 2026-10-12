@@ -291,6 +291,30 @@ export class GameAudio {
     this.play(HORNS[horn]);
   }
 
+  private auditionSource?: AudioBufferSourceNode;
+  /** Dev sound check: plays a voice line's audio; false for a caption-only line. */
+  async auditionVoice(id: string): Promise<boolean> {
+    if (!this.context || this.muted) return false;
+    await this.manifestLoad; await this.loadVoice(id);
+    const buffer = this.voiceBuffers.get(id);
+    if (!buffer) return false;
+    this.speak(buffer);
+    return true;
+  }
+  /** Dev sound check: plays the street recording once from a given second, so a sound in it can be located. */
+  auditionField(from = 0): boolean {
+    if (!this.context || !this.master || this.muted || !this.fieldBuffer) return false;
+    this.stopAudition();
+    const source = this.context.createBufferSource();
+    source.buffer = this.fieldBuffer; source.connect(this.master); source.start(0, from);
+    this.auditionSource = source;
+    return true;
+  }
+  stopAudition(): void {
+    if (this.auditionSource) { try { this.auditionSource.stop(); } catch { /* Already ended. */ } this.auditionSource.disconnect(); this.auditionSource = undefined; }
+    this.stopSpeech();
+  }
+
   /** Plays one bank sound outside a ride, for the dev-only sound check. */
   audition(id: SoundId): void {
     if (this.context && !this.muted && this.context.state === 'running') this.play(SOUNDS[id]);

@@ -13,6 +13,7 @@ import { SwipeRecognizer } from './controls';
 import { heartsLabel, raceBar, shavesChip } from './hud';
 import { districtCall, passCue } from './soundscape';
 import { SOUNDS, type SoundId } from './soundbank';
+import { VOICE_LINES } from './voices';
 
 const $=<T extends HTMLElement=HTMLElement>(s:string)=>document.querySelector<T>(s)!;
 const crown='<svg viewBox="0 0 32 28" fill="none"><path d="m3 7 6 6L16 3l7 10 6-6-4 17H7L3 7Z" stroke="currentColor" stroke-width="2"/><path d="M8 20h16" stroke="currentColor" stroke-width="2"/></svg>';
@@ -257,6 +258,10 @@ if(reviewMode){
   if(name.startsWith('Rear')){sim.traffic.push({id:9004,kind:'bus',x:0,z:30,speed:18,width:2.4,length:6.5,passed:false,warn:true,behavior:'rear-threat',phase:'warning',warningRemaining:3});sim.rearThreats.push({actorId:9004,kind:'bus',x:0,z:30,urgency:.6,timeToContact:3,warningRemaining:3,phase:'warning'});toastPriority=0;showToast('Bus behind! Move out of its lane.',true);toastUntil=performance.now()+6e5;sim.resume();}};$('#review-scenes').append(b);}
  // Dev-only sound check: play each bank sound by itself to judge it by ear.
  const check=document.createElement('details');check.innerHTML='<summary>Sound check</summary>';for(const id of Object.keys(SOUNDS) as SoundId[]){const b=document.createElement('button');b.textContent=id;b.onclick=()=>{void audio.init().then(()=>audio.audition(id));};check.append(b);}$('#review-tools').append(check);
+ const status=document.createElement('output');status.id='sound-check-status';check.append(status);let clock=0;const say=(t:string)=>{status.textContent=t;};
+ const voices=document.createElement('p');voices.textContent='Voices:';check.append(voices);for(const line of VOICE_LINES){const b=document.createElement('button');b.textContent=`${line.bangla} (${line.id})`;b.onclick=()=>{void audio.init().then(()=>audio.auditionVoice(line.id)).then(ok=>say(ok?`Playing ${line.id}`:`${line.id}: no audio yet (caption only)`));};check.append(b);}
+ const field=document.createElement('p');field.textContent='Street recording (38 s loop):';check.append(field);for(const from of [0,5,10,15,20,25,30,35]){const b=document.createElement('button');b.textContent=`from ${from}s`;b.onclick=()=>{void audio.init().then(()=>{const t0=performance.now();if(!audio.auditionField(from)){say('Recording not loaded yet — tap again in a moment');return;}clearInterval(clock);clock=window.setInterval(()=>say(`Street recording at ${(from+(performance.now()-t0)/1000).toFixed(1)} s`),100);});};check.append(b);}
+ const stop=document.createElement('button');stop.textContent='Stop';stop.onclick=()=>{clearInterval(clock);audio.stopAudition();say('Stopped');};check.append(stop);
  for(const outcome of ['won','lost'] as const){const b=document.createElement('button');b.textContent=`Test ${outcome}`;b.onclick=()=>{if(screen!=='playing')void start();sim.status=outcome;sim.stars=outcome==='won'?2:0;sim.speed=0;ending=false;finish();};$('#review-scenes').append(b);}
 }
 drawGarage();updateSound();requestAnimationFrame(()=>{
