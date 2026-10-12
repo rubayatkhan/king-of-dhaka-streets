@@ -26,3 +26,8 @@ export function withVoice(raw: unknown, args: AddVoiceArgs): VoiceManifest {
 }
 
 export function outputPath(args: AddVoiceArgs): string { return `public/audio/voices/${args.source}/${args.id}.mp3`; }
+
+/** A street call is one short take; a longer recording usually holds several takes that should be trimmed to the best one. */
+export const MAX_TAKE_SECONDS = 4;
+export function tooLong(seconds: number): boolean { return seconds > MAX_TAKE_SECONDS; }
+export const ffprobeArgs = (file: string): string[] => ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', file];

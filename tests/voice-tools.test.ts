@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ffmpegArgs, outputPath, parseArgs, withVoice } from '../scripts/voice-tools';
+import { MAX_TAKE_SECONDS, ffmpegArgs, outputPath, parseArgs, tooLong, withVoice } from '../scripts/voice-tools';
 
 describe('adding a voice recording', () => {
   it('reads the line id, the recording, an optional credit and the AI flag', () => {
@@ -27,5 +27,11 @@ describe('adding a voice recording', () => {
     expect(next).toEqual({ 'cha-ah': { ai: true }, 'tea-vendor': { family: true, credit: 'Ma' } });
     expect(withVoice(next, { id: 'tea-vendor', input: 'x', source: 'ai' })['tea-vendor']).toEqual({ family: true, ai: true, credit: 'Ma' });
     expect(outputPath({ id: 'cha-ah', input: 'x', source: 'ai' })).toBe('public/audio/voices/ai/cha-ah.mp3');
+  });
+
+  it('rejects a recording longer than one take of a street call', () => {
+    expect(MAX_TAKE_SECONDS).toBe(4);
+    expect(tooLong(3.9)).toBe(false); expect(tooLong(4)).toBe(false); expect(tooLong(4.01)).toBe(true); expect(tooLong(11.4)).toBe(true);
+    expect(tooLong(Number.NaN)).toBe(false);
   });
 });
