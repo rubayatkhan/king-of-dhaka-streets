@@ -69,6 +69,21 @@ async function initialized() {
 }
 
 describe('street audio lifecycle', () => {
+  it('plays a vehicle-specific hop once per jump and a rattling pothole bump', async () => {
+    const audio = await initialized();
+    audio.update(10, 'bicycle', true);
+    const start = context.createOscillator.mock.calls.length;
+    audio.jump('bicycle');
+    expect(context.createOscillator.mock.calls.length - start).toBe(2);
+    audio.jump('bicycle');
+    expect(context.createOscillator.mock.calls.length - start).toBe(2);
+    context.currentTime = 1; audio.jump('truck');
+    expect(context.createOscillator.mock.calls.length - start).toBe(3);
+    const beforeBump = context.createOscillator.mock.calls.length;
+    audio.bump();
+    expect(context.createOscillator.mock.calls.length - beforeBump).toBe(5);
+  });
+
   it('plays one cached field loop only during a ride, resumes its position, and resets it on retry', async () => {
     const audio = await initialized();
     expect(fieldSources()).toHaveLength(0);

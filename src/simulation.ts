@@ -1,4 +1,4 @@
-import { getStage, NEIGHBORHOODS, type Neighborhood, type StageProfile } from './campaign';
+import { getStage, NEIGHBORHOODS, SPEED_CAP, type Neighborhood, type StageProfile } from './campaign';
 export type VehicleKind = 'bicycle' | 'rickshaw' | 'motorbike' | 'car' | 'truck';
 export interface VehicleProfile {
   id: VehicleKind; name: string; bangla: string; tagline: string;
@@ -11,6 +11,17 @@ export const VEHICLES: VehicleProfile[] = [
   { id: 'car', name: 'Car', bangla: 'গাড়ি', tagline: 'Own your lane. Read the gaps.', maxSpeed: 21, width: 1.8, length: 3.7, steering: 4.4, authority: 3, color: 0xf2dbad },
   { id: 'truck', name: 'Truck', bangla: 'ট্রাক', tagline: 'The street hears you coming.', maxSpeed: 23, width: 2.5, length: 6.2, steering: 3.8, authority: 5, color: 0x259b99 },
 ];
+export type JumpClear = 'pothole' | 'paan' | 'splash';
+export interface JumpProfile { airtime: number; height: number; clears: JumpClear[] }
+// Every vehicle hops; smaller ones fly higher and clear more. Nothing clears traffic, cows or people.
+export const JUMPS: Record<VehicleKind, JumpProfile> = {
+  bicycle: { airtime: 0.6, height: 0.9, clears: ['pothole', 'paan', 'splash'] },
+  motorbike: { airtime: 0.55, height: 0.8, clears: ['pothole', 'paan', 'splash'] },
+  rickshaw: { airtime: 0.45, height: 0.5, clears: ['pothole', 'paan'] },
+  car: { airtime: 0.35, height: 0.25, clears: ['pothole'] },
+  truck: { airtime: 0.3, height: 0.15, clears: ['pothole'] },
+};
+const JUMP_COOLDOWN = 0.35, AIR_STEERING = 0.6;
 export type Traffic = {
   id: number; kind: VehicleKind | 'bus' | 'cng' | 'pedestrian' | 'pothole' | 'paan' | 'cow';
   x: number; z: number; speed: number; width: number; length: number; passed: boolean; warn: boolean;
@@ -40,6 +51,7 @@ export class Simulation {
   nearMisses = 0; maxCombo = 0; stars: 0 | 1 | 2 | 3 = 0; rank = 'Learner';
   readonly stage: StageProfile; readonly stageIndex: 0 | 1 | 2;
   invulnerable = 0; hornCooldown = 0;
+  y = 0; airTime = -1; jumpCooldown = 0;
   readonly routeLength: number;
   private rng: number;
   private yielding = new Map<number, { x: number; until: number }>();
@@ -47,6 +59,7 @@ export class Simulation {
   private crossing = new Map<number, { target: number; startsAt: number }>();
   private hit = new Set<number>();
   private contacted = new Set<number>();
+  private cleared = new Set<number>();
   private thrown = new Set<number>();
   private encounterId = 1000;
   private rearEncounters = 0;
@@ -68,6 +81,36 @@ export class Simulation {
     return NEIGHBORHOODS[(NEIGHBORHOODS.indexOf(this.stage.neighborhood) + zone) % NEIGHBORHOODS.length];
   }
   get neighborhood(): Neighborhood { return this.neighborhoodAt(this.distance); }
+  // Speed builds steadily from the mission's starting pace to its finish boost.
+  get maxSpeed(): number {
+    const start = VEHICLES[this.vehicleIndex].maxSpeed * this.stage.speedScale;
+    const progress = clamp(this.distance / this.routeLength, 0, 1);
+    return Math.min(SPEED_CAP, start * (1 + (this.stage.finishBoost - 1) * progress));
+  }
+  get airborne(): boolean { return this.airTime >= 0; }
+
+  jump(): boolean {
+    if (this.status !== 'playing' || this.airborne || this.jumpCooldown > 0) return false;
+    this.airTime = 0;
+    this.events.push({ type: 'jump', text: 'Hop!', x: this.x, z: this.z });
+    return true;
+  }
+
+  private get jumpProfile(): JumpProfile { return JUMPS[VEHICLES[this.vehicleIndex].id]; }
+
+  private updateJump(dt: number): void {
+    if (!this.airborne) { this.jumpCooldown = Math.max(0, this.jumpCooldown - dt); return; }
+    const profile = this.jumpProfile;
+    this.airTime += dt;
+    const t = this.airTime / profile.airtime;
+    if (t < 1) { this.y = 4 * profile.height * t * (1 - t); return; }
+    this.airTime = -1; this.y = 0; this.jumpCooldown = JUMP_COOLDOWN;
+    this.events.push({ type: 'land', text: '', x: this.x, z: this.z });
+  }
+
+  private clears(kind: string): boolean {
+    return this.airborne && (this.jumpProfile.clears as string[]).includes(kind);
+  }
 
   private random(): number {
     this.rng = (Math.imul(this.rng, 1664525) + 1013904223) >>> 0;
@@ -80,7 +123,9 @@ export class Simulation {
     // Each obstacle has a separate row. Repeated curb/center encounters prevent
     // a held steering key or no input from unlocking the next vehicle automatically.
     const hazardLines: (number | null)[] = [-4.55, 4.55, 0, null, -2.8, 2.8, null,
-      -4.55, 4.55, 0, null, -1.4, 1.4, null, -4.55, 4.55, 0, null, null, null, null];
+      -4.55, 4.55, 0, null, -1.4, 1.4, null, -4.55, 4.55, 0, null];
+    const lateLines = [-2.8, 2.8, 0, -4.55, 4.55, -1.4, 1.4];
+    const lateKinds = ['pothole', 'paan', 'cow'] as const;
     const mirror = this.random() < 0.5 ? -1 : 1;
     let id = 0;
     const addMoving = (kind: VehicleKind | 'bus' | 'cng', distance: number, x: number) => {
@@ -92,13 +137,15 @@ export class Simulation {
     addMoving('cng', 14, 1.8 * mirror);
     addMoving('bus', 28, -2.7 * mirror);
     addMoving('rickshaw', 42, 0.4 * mirror);
+    // Hazard rows keep their 28 m rhythm; later missions add moving traffic between them.
+    const busier = this.stage.densityScale > 1, busiest = this.stage.densityScale > 1.2;
     for (let distance = 42, row = 0; distance < this.routeLength - 25; distance += 28, row++) {
-        // The last district becomes a traffic finale rather than replaying the
-        // opening pothole slalom on top of late reactive encounters.
-        const hazardX = row < hazardLines.length ? hazardLines[row] : (row % 7 === 0 ? (row % 2 ? -1.4 : 1.4) : null);
+        // After the scripted opening, hazards keep coming to the finish, more often in later missions.
+        const lateHazard = row % 7 !== 3 && (this.stageIndex === 0 ? row % 2 === 0 : row % 3 !== 2);
+        const hazardX = row < hazardLines.length ? hazardLines[row] : lateHazard ? lateLines[row % lateLines.length] : null;
         const hazard = hazardX !== null;
         const pedestrian = !hazard && row % 7 === 3;
-        const kind = hazard ? (row >= 21 || row === 11 ? 'cow' : row % 2 === 0 ? 'pothole' : 'paan') : pedestrian ? 'pedestrian' : kinds[Math.floor(this.random() * kinds.length)];
+        const kind = hazard ? (row >= hazardLines.length ? lateKinds[row % 3] : row === 11 ? 'cow' : row % 2 === 0 ? 'pothole' : 'paan') : pedestrian ? 'pedestrian' : kinds[Math.floor(this.random() * kinds.length)];
         const profile = VEHICLES.find(vehicle => vehicle.id === kind);
         const width = profile?.width ?? (kind === 'bus' ? 2.4 : kind === 'cng' ? 1.5 : kind === 'pedestrian' ? 0.65 : 1.65);
         const length = profile?.length ?? (kind === 'bus' ? 6.5 : kind === 'cng' ? 2.5 : kind === 'pedestrian' ? 0.65 : kind === 'cow' ? 2.1 : 1.4);
@@ -112,13 +159,18 @@ export class Simulation {
         // Intermediate rows add city life without stacking actors across the road.
         // Nearby moving vehicles share a side in small groups; hazards still make
         // every straight corridor unsafe somewhere along the complete route.
-        if (row % 4 !== 3 && distance + 14 < this.routeLength - 25) {
+        if ((row % 4 !== 3 || busier) && distance + 14 < this.routeLength - 25) {
           const lightTraffic: (VehicleKind | 'cng')[] = ['rickshaw', 'cng', 'bicycle'];
           const trafficKind = lightTraffic[(row + Math.floor(this.random() * 3)) % lightTraffic.length];
           const trafficSide = (Math.floor(row / 3) % 2 === 0 ? 1 : -1) * mirror;
           const inner = row % (this.stageIndex === 2 ? 3 : 5) === 0;
           const innerKind = this.stageIndex === 2 && row % 2 ? trafficKind : 'bicycle';
           addMoving(inner ? innerKind : trafficKind, distance + 14, inner ? trafficSide * (1 + this.random() * 0.35) : trafficSide * (3.9 + this.random() * 0.15));
+        }
+        // The busiest missions add a curbside vehicle on the opposite side every eighth row.
+        if (busiest && row % 8 === 1 && distance + 20.5 < this.routeLength - 25) {
+          const side = (Math.floor(row / 3) % 2 === 0 ? -1 : 1) * mirror;
+          addMoving(row % 16 === 1 ? 'rickshaw' : 'cng', distance + 20.5, side * (3.9 + this.random() * 0.15));
         }
     }
   }
@@ -139,6 +191,9 @@ export class Simulation {
       this.step(step, input);
       left -= step;
     }
+    // Results always show the rider on the road.
+    const status = this.status as Simulation['status']; // step() may have ended the ride
+    if (status === 'won' || status === 'lost') { this.airTime = -1; this.y = 0; }
   }
 
   private step(dt: number, input: Input): void {
@@ -146,12 +201,13 @@ export class Simulation {
     this.elapsed += dt;
     this.invulnerable = Math.max(0, this.invulnerable - dt);
     this.hornCooldown = Math.max(0, this.hornCooldown - dt);
+    this.updateJump(dt);
     if (this.elapsed > this.chainUntil) this.combo = 0;
-    const targetSpeed = input.brake ? 1.4 : vehicle.maxSpeed;
+    const targetSpeed = input.brake ? 1.4 : this.maxSpeed;
     const response = input.brake ? 3.5 : 1.05;
     this.speed += (targetSpeed - this.speed) * (1 - Math.exp(-response * dt));
-    const steer = Number.isFinite(input.steer) ? clamp(input.steer, -1, 1) : 0;
-    this.x = clamp(this.x + steer * vehicle.steering * (0.45 + 0.55 * this.speed / vehicle.maxSpeed) * dt,
+    const steer = (Number.isFinite(input.steer) ? clamp(input.steer, -1, 1) : 0) * (this.airborne ? AIR_STEERING : 1);
+    this.x = clamp(this.x + steer * vehicle.steering * (0.45 + 0.55 * this.speed / this.maxSpeed) * dt,
       -ROAD_HALF_WIDTH + vehicle.width / 2, ROAD_HALF_WIDTH - vehicle.width / 2);
     this.distance = Math.min(this.routeLength, this.distance + this.speed * dt);
     this.z = -this.distance;
@@ -199,11 +255,16 @@ export class Simulation {
       const lateralContact = actor.kind === 'pothole' || actor.kind === 'paan' ? 0.38 : 0.43;
       const overlapX = Math.abs(this.x - actor.x) < (vehicle.width + actor.width) * lateralContact;
       const overlapZ = Math.abs(ahead) < (vehicle.length + actor.length) * 0.43;
-      if (overlapX && overlapZ) { this.contacted.add(actor.id); this.combo = 0; }
-      if (overlapX && overlapZ && this.invulnerable <= 0 && !this.hit.has(actor.id)) {
+      // Being airborne at first overlap clears the hazard for the whole pass.
+      if (overlapX && overlapZ && !this.hit.has(actor.id) && this.clears(actor.kind)) this.cleared.add(actor.id);
+      const contact = overlapX && overlapZ && !this.cleared.has(actor.id);
+      if (contact) { this.contacted.add(actor.id); this.combo = 0; }
+      if (contact && this.invulnerable <= 0 && !this.hit.has(actor.id)) {
         this.hit.add(actor.id);
         this.health = Math.max(0, this.health - 1);
-        this.speed *= 0.28;
+        const pothole = actor.kind === 'pothole';
+        this.speed *= pothole ? 0.7 : 0.28;
+        if (pothole) this.events.push({ type: 'bump', text: 'Bump!', x: actor.x, z: actor.z, actorId: actor.id });
         this.invulnerable = 2;
         this.combo = 0;
         this.events.push({ type: 'crash', text: actor.kind === 'paan' ? 'Paan on the road! Shake it off.' : actor.kind === 'pothole' ? 'Oof! Watch those potholes.' : 'Easy, boss! Find a little space.', x: actor.x, z: actor.z, actorId: actor.id, priority: 'urgent' });
@@ -263,7 +324,7 @@ export class Simulation {
         p.y = 1.35 * (1 - p.progress) + Math.sin(Math.PI * p.progress) * 1.25;
         if (p.remaining <= 1e-8) { p.phase = 'splash'; p.remaining = 0.8; p.progress = 0; p.x = p.targetX; p.z = p.targetZ; p.y = 0.03; }
       }
-      if (p.phase === 'splash' && Math.abs(this.x - p.x) < vehicle.width / 2 + p.radius && Math.abs(this.z - p.z) < vehicle.length / 2 + p.radius) {
+      if (p.phase === 'splash' && !this.clears('splash') && Math.abs(this.x - p.x) < vehicle.width / 2 + p.radius && Math.abs(this.z - p.z) < vehicle.length / 2 + p.radius) {
         this.contacted.add(p.id); this.combo = 0;
         if (this.invulnerable <= 0 && !this.hit.has(p.id)) {
           this.hit.add(p.id); this.health = Math.max(0, this.health - 1); this.speed *= 0.4; this.invulnerable = 2;
@@ -312,7 +373,7 @@ export class Simulation {
       if (this.escapeExists(candidate)) {
       this.rearEncounters++; this.encounterId++;
       this.rearThreats.push(candidate);
-      this.traffic.push({ id: actorId, kind, x, z, speed: vehicle.maxSpeed + 9, width: kind === 'bus' ? 2.4 : 2.5, length: 6.5,
+      this.traffic.push({ id: actorId, kind, x, z, speed: this.maxSpeed + 9, width: kind === 'bus' ? 2.4 : 2.5, length: 6.5,
         passed: false, warn: true, behavior: 'rear-threat', phase: 'warning', warningRemaining: 3 });
       this.events.push({ type: 'rear-warning', text: kind === 'bus' ? 'Bus behind! Move out of the marked lane.' : 'Truck behind! Clear its lane.', x, z, actorId, priority: 'urgent' });
       }
