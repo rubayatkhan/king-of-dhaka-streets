@@ -47,3 +47,9 @@ Additional district references: [Banglapedia: Shankhari](https://en.banglapedia.
 
 ## Fonts
 The interface requests Barlow Condensed, DM Sans and Noto Sans Bengali through Google Fonts, with local system fallbacks. The game remains playable when that request fails; Bengali sign appearance depends on available font support. Fonts are not yet bundled for offline use.
+
+## Sound and music, drop 2b (2026-10-12)
+- **Effects, bells, horns and district soundscapes** (`src/soundbank.ts`, `src/soundscape.ts`) are original Web Audio synthesis written for this project. There are no samples. The shapes imitate Dhaka street sounds: poisha coins, tea glasses, the jhalmuri seller's tin, conch-shell workshop sawing, launch horns and the ice-cream cart bell. No religious or devotional sounds are used.
+- **Adaptive music** (`src/music.ts`) is an original arrangement synthesized in the browser: dhol, ektara, harmonium and bansuri voices on a 96 BPM grid. The tune is original.
+- **Generated district beds** (Eleven Music) are supported by `src/musicplayer.ts` and `public/audio/music/manifest.json`, but none have shipped yet. When they do, `scripts/loop-music.py` tempo-locks each to 96 BPM, cuts a 16-bar (40 s) loop with 30 ms fades, and levels it to −20 LUFS at 96 kbps. Each one will be recorded here with its prompt, date and plan terms.
+- **Street voices:** 17 lines are listed in `docs/voice-script.md`. Five use the existing HeyGen placeholders described above. The other twelve are caption-only until the family records them (`npm run add-voice`) or AI placeholders are generated.
