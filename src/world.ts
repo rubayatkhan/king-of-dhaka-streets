@@ -1,7 +1,7 @@
 import * as T from 'three';
 import {box,sphere,tube,material,canvasTexture,textured,mergeStatic,createVehicle,coinParts,snackModel,type VehicleLook,animateVehicle,pedestrian,type Model,disposeModel,seatedCow,roadHazard,animatePedestrian} from './models';
 import {Simulation,VEHICLES} from './simulation';
-import {SHAKE_SECONDS,landingSquash,shakeOffset} from './feel';
+import {SHAKE_SECONDS,landingSquash,magnetOpacity,shakeOffset} from './feel';
 
 export const pathX=(z:number)=>Math.sin(z*.008)*5+Math.sin(z*.019)*1.8;
 const facades=[0xd99570,0xe8c28c,0xc98591,0x65aaa0,0xe0a48b,0xb5c7bb];
@@ -451,9 +451,11 @@ export class World {
   this.magnetField.visible=false;this.scene.add(this.magnetField);
  }
  private renderMagnet(sim:Simulation,z:number){
-  const left=sim.effects.magnet;this.magnetField.visible=left>0&&(left>1.5||Math.floor(this.clock*8)%2===0);if(!this.magnetField.visible)return;
-  this.magnetField.position.set(pathX(z)+sim.x,.06+sim.y,z);this.magnetField.scale.setScalar(sim.magnetReach);(this.magnetField.userData.disc as T.Mesh).rotation.z=this.clock*.5;
-  this.magnetRipples.forEach((ripple,i)=>{const phase=(this.clock*.8+i*.5)%1;ripple.scale.setScalar(1-phase*.7);(ripple.material as T.MeshBasicMaterial).opacity=Math.sin(phase*Math.PI)*.55;});
+  const fade=magnetOpacity(sim.effects.magnet,this.clock,this.reduced);this.magnetField.visible=fade>0;if(!this.magnetField.visible)return;
+  const disc=this.magnetField.userData.disc as T.Mesh;(disc.material as T.MeshBasicMaterial).opacity=fade;
+  this.magnetField.position.set(pathX(z)+sim.x,.06+sim.y,z);this.magnetField.scale.setScalar(sim.magnetReach);disc.rotation.z=this.reduced?0:this.clock*.5;
+  // Ripples drift inward to show the pull; the gentler camera keeps the field still.
+  this.magnetRipples.forEach((ripple,i)=>{const phase=(this.clock*.8+i*.5)%1;ripple.visible=!this.reduced;ripple.scale.setScalar(1-phase*.7);(ripple.material as T.MeshBasicMaterial).opacity=Math.sin(phase*Math.PI)*.55*fade;});
  }
  // Cha speed lines: warm streaks rushing past the camera edges in one instanced draw (off with the gentler camera).
  private makeStreaks(){
