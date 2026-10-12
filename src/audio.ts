@@ -1,6 +1,7 @@
 /** CC0 street ambience, original effects, and street calls: the family's recording, else a bundled AI voice, else a caption. */
 import { DEFAULT_HORN, HORNS, JUMP_SOUND, SOUNDS, coinRecipe, transpose, type HornId, type Note, type Recipe, type ToneNote } from './soundbank';
 import type { VehicleKind } from './simulation';
+import { asDistrict, streetCue, type Cue } from './soundscape';
 import { lineById, linesFor, sanitizeManifest, voiceSource, voiceUrl, type District, type VoiceLine, type VoiceManifest } from './voices';
 export interface StreetAudioContext {
   neighborhood: string;
@@ -157,8 +158,8 @@ export class GameAudio {
     const cycling = /bicycle|rickshaw|cycle/i.test(vehicle);
     const playing = this.active && !this.muted && ctx.state === 'running';
     const intensity = bound(street?.intensity ?? 0.45);
-    const river = /sadar|river|ghat|buriganga/i.test(street?.neighborhood ?? '');
-    const market = /shankhari|chawk|market|bazaar|old|puran/i.test(street?.neighborhood ?? 'old');
+    const district = asDistrict(street?.neighborhood);
+    const river = district === 'riverfront', market = district === 'bazaar';
     this.syncField(playing);
     this.fieldGain?.gain.setTargetAtTime(playing ? (river ? 0.42 : market ? 0.72 : 0.85) * (0.8 + intensity * 0.2) : 0, now, 0.65);
     const normalLevel = 0.57 + intensity * 0.22;
@@ -172,7 +173,8 @@ export class GameAudio {
       const near = nearby[i], actor = near?.actor;
       const heavy = actor && /bus|truck/.test(actor.kind);
       layer.gain.gain.setTargetAtTime(playing && near ? (0.014 + intensity * 0.025) * (1 - near.distance / 55) : 0, now, 0.15);
-      layer.oscillator.frequency.setTargetAtTime((heavy ? 36 : 67) + bound(actor?.speed ?? 0, 0, 45) * 2.4, now, 0.18);
+      layer.oscillator.type = actor?.kind === 'cng' ? 'square' : 'sawtooth';
+      layer.oscillator.frequency.setTargetAtTime((actor?.kind === 'cng' ? 26 : heavy ? 36 : 67) + bound(actor?.speed ?? 0, 0, 45) * 2.4, now, 0.18);
       layer.pan.pan.setTargetAtTime(bound((actor?.x ?? 0) / 5.3, -0.95, 0.95), now, 0.14);
     });
     const rear = street?.rear, urgency = bound(rear?.urgency ?? 0);
@@ -196,20 +198,15 @@ export class GameAudio {
     this.pedalOsc?.frequency.setTargetAtTime(85 + movement * 30, now, 0.2);
     if (playing && now > this.nextStreetSound && now >= this.warningUntil) {
       this.nextStreetSound = now + 1.9 - intensity * 1.05 + Math.random() * 1.4;
-      this.streetBeat++;
-      const actor = nearby[this.streetBeat % Math.max(1, nearby.length)]?.actor;
-      const pan = actor ? bound(actor.x / 5.3, -0.85, 0.85) : (this.streetBeat % 2 ? -0.7 : 0.7);
-      if (river && this.streetBeat % 5 === 0) {
-        this.play([tn(98, 1.15, 0.065, 'triangle', 0, 87), tn(147, 0.95, 0.025, 'sine', 0.08)], -0.8, true);
-      } else if (/bus|truck/.test(actor?.kind ?? '')) {
-        this.play([tn(174, 0.35, 0.07, 'sawtooth', 0, 162), tn(233, 0.27, 0.045, 'triangle', 0.16)], pan, true);
-      } else if (actor) {
-        this.play([tn(actor.kind === 'cng' ? 490 : 370, 0.18, 0.045, 'triangle'), tn(440, 0.14, 0.032, 'triangle', 0.22)], pan, true);
-      } else {
-        // Metal bell partials and short rattles keep slower lanes alive.
-        this.play([tn(1370, 0.38, 0.042), tn(2231, 0.21, 0.014, 'sine', 0.09), tn(730, 0.09, 0.012, 'triangle', 0.19)], pan, true);
-      }
+      this.cue(streetCue({ district, beat: ++this.streetBeat, nearby: nearby.map(n => ({ kind: n.actor.kind, x: n.actor.x, distance: n.distance })), random: Math.random }));
     }
+  }
+
+  /** Plays a street cue: its sound into the ambience (so warnings duck it), then its voice line if it has one. */
+  cue(cue?: Cue): void {
+    if (!cue) return;
+    if (cue.sound && this.ready()) this.play(SOUNDS[cue.sound], cue.pan, true);
+    if (cue.voice) this.say(cue.voice);
   }
 
   /** Clear a previous mission without rebuilding the graph or decoding clips again. */

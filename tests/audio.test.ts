@@ -342,3 +342,33 @@ it('previews a horn in the Bazaar outside a ride, but never while muted', async 
   expect(context.createOscillator.mock.calls.length).toBe(muted);
   expect(() => new GameAudio().preview('bike-bell-brass')).not.toThrow(); // no context yet
 });
+
+it('plays district and traffic cues into the ambience bus, and never while a warning sounds', async () => {
+  const audio = await initialized();
+  audio.update(10, 'bicycle', true, { neighborhood: 'riverfront', intensity: .5 });
+  const after = context.createOscillator.mock.calls.length + context.sources.length;
+  audio.warning('rear'); context.currentTime = 1;
+  audio.update(10, 'bicycle', true, { neighborhood: 'riverfront', intensity: .5 });
+  expect(context.createOscillator.mock.calls.length + context.sources.length - after).toBeLessThanOrEqual(2); // only the warning's own two tones
+});
+
+it('lets the street speak between warnings: a cue plays once the street timer is due', async () => {
+  const audio = await initialized();
+  context.currentTime = 5;
+  const before = context.createOscillator.mock.calls.length + context.sources.length;
+  audio.update(10, 'bicycle', true, { neighborhood: 'boulevard', intensity: .5 });
+  expect(context.createOscillator.mock.calls.length + context.sources.length).toBeGreaterThan(before);
+});
+
+it('cue() plays the sound then captions its voice line, and ignores an empty cue', async () => {
+  const audio = await initialized();
+  const captions: string[] = []; audio.onCaption = line => captions.push(line.id);
+  audio.update(10, 'bicycle', true, { neighborhood: 'bazaar', intensity: .5 }); // an active ride
+  const before = context.createOscillator.mock.calls.length + context.sources.length;
+  audio.cue(undefined);
+  expect(context.createOscillator.mock.calls.length + context.sources.length).toBe(before);
+  clock = 100;
+  audio.cue({ sound: 'bus-slap', voice: busLine, pan: 0 });
+  expect(context.createOscillator.mock.calls.length + context.sources.length).toBeGreaterThan(before);
+  expect(captions).toEqual([busLine]);
+});
