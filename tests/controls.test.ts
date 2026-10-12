@@ -32,6 +32,19 @@ describe('swipe controls', () => {
     for (let step = 1; step <= 6; step++) slow.move(1, 500, 300 + step * 10, step * 150);
     expect(slow.brake).toBe(false);
   });
+  it('treats a diagonal steering drag as steering, never braking or jumping', () => {
+    const down = new SwipeRecognizer(390); down.down(1, 195, 500, 0);
+    for (let step = 1; step <= 4; step++) down.move(1, 195 + step * 15, 500 + step * 11.25, step * 50);
+    expect(down.steer).toBeGreaterThan(0.8); expect(down.brake).toBe(false);
+    const up = new SwipeRecognizer(390); up.down(1, 195, 500, 0);
+    for (let step = 1; step <= 4; step++) up.move(1, 195 - step * 15, 500 - step * 11.25, step * 50);
+    expect(up.takeJump()).toBe(false);
+  });
+  it('still brakes and jumps on a mostly vertical swipe with a little sideways drift', () => {
+    const swipe = new SwipeRecognizer(390); swipe.down(1, 195, 500, 0);
+    swipe.move(1, 205, 450, 120); expect(swipe.takeJump()).toBe(true);
+    swipe.move(1, 210, 500, 300); expect(swipe.brake).toBe(true);
+  });
   it('keeps steering with the first finger when a second finger touches and lifts', () => {
     const swipe = new SwipeRecognizer(1000); swipe.down(1, 500, 500, 0); swipe.move(1, 590, 500, 16);
     swipe.down(2, 100, 100, 20); swipe.move(2, 900, 100, 30); swipe.up(2, 900, 100, 40); swipe.cancel(2);
