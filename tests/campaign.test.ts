@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { STAGES, getStage } from '../src/campaign';
+import { VEHICLES } from '../src/simulation';
 describe('fifteen-lesson campaign', () => {
   it('requires three distinct lessons for every vehicle before the next vehicle', () => {
     expect(STAGES).toHaveLength(15);
@@ -9,6 +10,16 @@ describe('fifteen-lesson campaign', () => {
       expect(new Set(stages.map(stage => stage.name)).size).toBe(3);
       expect(new Set(stages.map(stage => stage.neighborhood)).size).toBe(3);
       expect(stages[2].routeLength).toBeGreaterThan(stages[0].routeLength);
+    }
+  });
+  it('ramps speed and traffic density within each chapter and times par from the faster speed', () => {
+    for (let vehicle = 0; vehicle < 5; vehicle++) {
+      const [first, second, third] = [0, 1, 2].map(lesson => getStage(vehicle, lesson));
+      expect(first.speedScale).toBe(1); expect(first.densityScale).toBe(1);
+      expect(second.speedScale).toBeGreaterThan(first.speedScale); expect(third.speedScale).toBeGreaterThan(second.speedScale);
+      expect(second.densityScale).toBeGreaterThan(first.densityScale); expect(third.densityScale).toBeGreaterThan(second.densityScale);
+      for (const stage of [first, second, third])
+        expect(stage.parTime).toBe(Math.ceil(stage.routeLength / (VEHICLES[vehicle].maxSpeed * stage.speedScale) * 1.65 + 10));
     }
   });
   it('normalizes corrupted/out-of-range stage selections to a valid campaign entry', () => {
