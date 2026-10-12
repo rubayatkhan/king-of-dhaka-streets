@@ -27,7 +27,7 @@ export function streetCue({ district, beat, nearby, random }: CueInput): Cue {
   if (near?.kind === 'rickshaw') return random() < 0.15 ? { sound: 'rickshaw-tring', voice: 'rickshaw-mama', pan: pan(near.x) } : { sound: 'rickshaw-tring', pan: pan(near.x) };
   if (near?.kind === 'truck') return { sound: 'truck-call', pan: pan(near.x) };
   if (near?.kind === 'cng') return { sound: 'cng-putter', pan: pan(near.x) };
-  if (near && /bus|car|motorbike/.test(near.kind)) return { sound: 'bike-bell', pan: pan(near.x) };
+  if (near && /bus|car|motorbike/.test(near.kind)) return { sound: 'traffic-horn', pan: pan(near.x) };
   const palette = DISTRICT_SOUNDS[district];
   return { sound: palette[((beat % palette.length) + palette.length) % palette.length], pan: beat % 2 ? -0.7 : 0.7 };
 }

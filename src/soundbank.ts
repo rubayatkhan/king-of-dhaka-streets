@@ -36,6 +36,7 @@ export const SOUNDS = {
   'sack-thump': [t(60, .18, .12, 'sine', 0, 40), n('lowpass', 300, .1, .05)],
   'icecream-bell': [t(1760, .25, .035), t(1568, .25, .035, 'sine', .18), t(1318.5, .4, .035, 'sine', .36)],
   'bike-bell': [t(1568, .65, .17), t(2420, .35, .055), t(1568, .5, .1, 'sine', .13)],
+  'traffic-horn': [t(330, .24, .05, 'sawtooth', 0, undefined, { lowpass: 1400 }), t(415, .24, .05, 'triangle', 0, undefined, { lowpass: 1400 })], // a short, quiet two-tone car or bus horn, nothing like the rider's own bell
 } satisfies Record<string, Recipe>;
 export type SoundId = keyof typeof SOUNDS;
 

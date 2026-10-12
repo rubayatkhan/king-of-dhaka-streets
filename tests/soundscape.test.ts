@@ -23,6 +23,16 @@ describe('street and district cues', () => {
     expect(streetCue({ district: 'bazaar', beat: 1, nearby: [{ kind: 'bus', x: -9, distance: 5 }], random: never }).pan).toBe(-0.85);
   });
 
+  it('gives a nearby bus, car or motorbike a traffic horn, never the rider\'s own bicycle bell', () => {
+    for (const kind of ['bus', 'car', 'motorbike']) {
+      const sound = streetCue({ district: 'bazaar', beat: 1, nearby: [{ kind, x: 0, distance: 8 }], random: never }).sound!;
+      expect(sound).toBe('traffic-horn'); expect(SOUNDS[sound]).not.toBe(SOUNDS['bike-bell']);
+    }
+    const horn = SOUNDS['traffic-horn'];
+    expect(horn.length).toBeGreaterThanOrEqual(2);
+    for (const note of horn) { expect(note.vol).toBeLessThanOrEqual(0.06); expect((note.at ?? 0) + note.dur).toBeLessThanOrEqual(0.3); }
+  });
+
   it('slaps a passed bus twice, then the helper calls the bus line or a route', () => {
     const calls = [1, 2, 3, 4, 5, 6].map(n => passCue('bus', n));
     for (const c of calls) { expect(c?.sound).toBe('bus-slap'); expect(lineById(c!.voice!)).toBeDefined(); }
