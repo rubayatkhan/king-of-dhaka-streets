@@ -217,7 +217,7 @@ function frame(now:number){const dt=Math.min((now-last)/1000,.05);last=now;
   if(event.type==='rear-warning')audio.warning('rear',(event.x??0)/5.3);if(event.type==='rear-swerve'){audio.warning('rear',(event.x??0)/5.3);swerveUntil=now+2500;}
   if(event.type==='paan-warning'){audio.warning('paan',(event.x??0)/5.3);showToast(event.text,true);}
   if(event.type==='crash'){lastFailure=event.text;if(/paan/i.test(event.text)){splashUntil=now+1900;$('#paan-splash').classList.add('splashed');}audio.impact();audio.say('easy-brother');showToast(event.text,true);$('#impact').classList.add('hit');feedbackUntil=now+260;}
-  if(event.type==='coin')audio.coin(event.chain??1);if(event.type==='snack'){audio.snack(event.kind??'cha');showToast(event.text);}if(event.type==='stomach'){audio.stomach();showToast(event.text,true);}if(event.type==='belly'){audio.belly();showToast(event.text);}
+  if(event.type==='coin')audio.coin(event.chain??1,event.value===5?5:1);if(event.type==='snack'){audio.snack(event.kind??'cha');showToast(event.text);}if(event.type==='stomach'){audio.stomach();showToast(event.text,true);}if(event.type==='belly'){audio.belly();showToast(event.text);}
   if(event.type==='near-miss'){audio.nearMiss(sim.combo);$('#combo').innerHTML=`<small>বাঁচলাম!</small>${event.text}`;$('#combo').classList.add('visible','close-shave');comboUntil=now+1500;}
   if(event.type==='pass'&&now>comboUntil){$('#combo').textContent=event.text;$('#combo').classList.remove('close-shave');$('#combo').classList.add('visible');comboUntil=now+900;}
   if(event.type==='win'||event.type==='lose'){if(event.type==='lose')lastFailure=event.text;finish();}

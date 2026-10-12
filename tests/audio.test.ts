@@ -79,11 +79,14 @@ describe('street audio lifecycle', () => {
     expect(context.createOscillator.mock.calls.length - start).toBe(2);
     audio.jump('bicycle');
     expect(context.createOscillator.mock.calls.length - start).toBe(2);
-    context.currentTime = 1; audio.jump('truck');
+    context.currentTime = 1;
+    const sources = context.sources.length; audio.jump('truck'); // one thump plus a noise clunk
     expect(context.createOscillator.mock.calls.length - start).toBe(3);
-    const beforeBump = context.createOscillator.mock.calls.length;
-    audio.bump();
-    expect(context.createOscillator.mock.calls.length - beforeBump).toBe(5);
+    expect(context.sources.length - sources).toBe(1);
+    const beforeBump = context.createOscillator.mock.calls.length, beforeNoise = context.sources.length;
+    audio.bump(); // thunk and rattle tick, plus a rattle of filtered noise
+    expect(context.createOscillator.mock.calls.length - beforeBump).toBe(2);
+    expect(context.sources.length - beforeNoise).toBe(1);
   });
 
   it('plays one cached field loop only during a ride, resumes its position, and resets it on retry', async () => {
@@ -282,15 +285,26 @@ describe('street audio lifecycle', () => {
     const audio = await initialized();
     audio.update(10, 'bicycle', true);
     const count = () => context.createOscillator.mock.calls.length, freq = (n: number) => (context.createOscillator.mock.results[n].value as { frequency: { value: number } }).frequency.value;
-    let start = count(); audio.coin(1); expect(count() - start).toBe(1); const low = freq(start);
-    audio.coin(2); expect(count() - start).toBe(1);
-    context.currentTime = 1; start = count(); audio.coin(3); expect(count() - start).toBe(1); expect(freq(start)).toBeGreaterThan(low);
-    start = count(); audio.snack('cha'); expect(count() - start).toBe(2);
-    start = count(); audio.snack('jhalmuri'); expect(count() - start).toBe(4);
+    let start = count(); audio.coin(1); expect(count() - start).toBe(2); const low = freq(start);
+    audio.coin(2); expect(count() - start).toBe(2);
+    context.currentTime = 1; start = count(); audio.coin(3); expect(count() - start).toBe(2); expect(freq(start)).toBeGreaterThan(low);
+    context.currentTime = 2; start = count(); audio.coin(1, 5); expect(count() - start).toBe(2); expect(freq(start)).toBeLessThan(low);
+    start = count(); audio.snack('cha'); expect(count() - start).toBe(1);
+    start = count(); audio.snack('jhalmuri'); expect(count() - start).toBe(3);
     start = count(); audio.snack('chaap'); expect(count() - start).toBe(1);
-    start = count(); audio.stomach(); expect(count() - start).toBe(2);
-    start = count(); audio.belly(); expect(count() - start).toBe(1);
+    start = count(); audio.stomach(); expect(count() - start).toBe(4); // three notes plus the harmonium's vibrato LFO
+    start = count(); audio.belly(); expect(count() - start).toBe(2);
   });
 });
 
  it('plays a terminal collision sting after the ride has become inactive',async()=>{const audio=await initialized();audio.update(5,'bicycle',true);audio.update(0,'bicycle',false);audio.resetRide();const before=context.createOscillator.mock.calls.length;audio.loss();expect(context.createOscillator.mock.calls.length).toBeGreaterThan(before);audio.resetRide();expect(context.createOscillator.mock.results.at(-1)!.value.stop).toHaveBeenCalled();});
+
+it('cancels scheduled noise bursts with the rest of the ride sounds', async () => {
+  const audio = await initialized(); audio.update(10, 'bicycle', true);
+  const before = context.sources.length;
+  audio.bump(); // the pothole recipe has a rattle of filtered noise
+  const bursts = context.sources.slice(before);
+  expect(bursts.length).toBeGreaterThan(0);
+  audio.setMuted(true);
+  for (const b of bursts) expect(b.stop).toHaveBeenCalled();
+});
