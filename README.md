@@ -39,6 +39,12 @@ Open the displayed local address. For a phone on the same Wi-Fi, use the display
 
 Swipe is the default on phones and tablets; switch to Buttons in settings.
 
+## Taka, street food and the Bazaar
+
+Collect taka (৳) as you ride. ৳1 coin trails show a safe line, ৳5 trails sit in daring gaps beside traffic, and raised arcs need a jump. Roadside snacks are power-ups: **cha** gives a speed burst and double street rep, **jhalmuri** pulls nearby taka in, and **chaap** absorbs one bump. Every snack you eat makes a funny upset stomach (পেট গুড়গুড়!) more likely, slowing you down and making you wobble for a few seconds.
+
+Finishing pays ৳20 plus ৳10 per star, and the first clear of each mission pays ৳50 more. Losing keeps the taka you collected. Spend it in the **Bazaar** (garage, top right): rickshaw and truck art, paint, accessories and rider outfits, or upgrades that make cha, jhalmuri and chaap stronger. Upgrades never add hearts or change how missions unlock. There is no real money in the game.
+
 Forward movement is automatic. Complete three distinct missions with each vehicle before graduating. Every finish earns a medal and advances; optional gold targets reward three remaining hearts, close passes and pace. Close shaves build a short score chain. Retry starts the same mission immediately.
 
 Ordinary collisions cost a heart. A bus or truck approaching from behind warns for three seconds, commits to the highlighted line, then overtakes; staying in its path can end the ride immediately. Clear its lane. Pedestrians wind up and throw paan toward a marked landing spot. Watch for seated cows, crossing walkers and chipped, irregular potholes. Later missions combine these encounters more frequently.
