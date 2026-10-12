@@ -10,9 +10,12 @@ function obstacle(patch: Partial<Traffic> = {}): Traffic {
 }
 
 // A deliberately simple player: select a visible gap, brake for imminent threats,
-// and use the truck's horn. It has no access to unrendered future route geometry.
+// hop unavoidable ground hazards, and use the truck's horn. It has no access to unrendered future route geometry.
 function pilot(sim: Simulation) {
   const vehicle = VEHICLES[sim.vehicleIndex];
+  // Like a player, hop a pothole or paan spill that steering has not avoided in time.
+  if (sim.traffic.some(t => (t.kind === 'pothole' || t.kind === 'paan') && !t.passed && Math.abs(sim.x - t.x) < (vehicle.width + t.width) * 0.38 &&
+    sim.z - t.z > 0 && sim.z - t.z < (vehicle.length + t.length) * 0.43 + Math.max(0.5, sim.speed * 0.08))) sim.jump();
   const visible = sim.traffic.filter(t => sim.z - t.z > -(t.length + vehicle.length) / 2 && sim.z - t.z < Math.max(18, sim.speed * 2));
   if (sim.vehicleIndex === 4 && visible.some(t => sim.z - t.z > 8 && t.speed > 0)) sim.horn();
   let target = sim.x, bestCost = Infinity;
@@ -162,7 +165,7 @@ describe('handling and hazards', () => {
   });
 
   it('collision slows the rider and grants immunity against repeated damage', () => {
-    const sim = new Simulation(); sim.start(); sim.speed = 10; sim.traffic = [obstacle()];
+    const sim = new Simulation(); sim.start(); sim.speed = 10; sim.traffic = [obstacle({ kind: 'cng' })];
     sim.update(1 / 60, straight);
     expect(sim.health).toBe(2); expect(sim.speed).toBeLessThan(5);
     sim.traffic = [obstacle({ id: 10000, z: sim.z })]; sim.update(1 / 60, straight);
@@ -170,6 +173,17 @@ describe('handling and hazards', () => {
     sim.traffic.length = 0; advance(sim, 2.1);
     sim.traffic = [obstacle({ id: 10001, z: sim.z })]; sim.update(1 / 60, straight);
     expect(sim.health).toBe(1);
+  });
+
+  it('bumps over a grounded pothole: one heart, a 30% slowdown and a bump event', () => {
+    const sim = new Simulation(); sim.start(); sim.speed = 10; sim.traffic = [obstacle()];
+    sim.update(1 / 60, straight);
+    expect(sim.health).toBe(2);
+    expect(sim.speed).toBeGreaterThan(6.5); expect(sim.speed).toBeLessThan(7.5);
+    expect(sim.events.some(e => e.type === 'bump')).toBe(true);
+    const cow = new Simulation(); cow.start(); cow.speed = 10; cow.traffic = [obstacle({ kind: 'cow' })];
+    cow.update(1 / 60, straight);
+    expect(cow.events.some(e => e.type === 'bump')).toBe(false); expect(cow.speed).toBeLessThan(4);
   });
 
   it('does not award a clean pass for contact during collision immunity', () => {

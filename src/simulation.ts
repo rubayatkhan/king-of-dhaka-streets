@@ -247,7 +247,9 @@ export class Simulation {
       if (overlapX && overlapZ && !cleared && this.invulnerable <= 0 && !this.hit.has(actor.id)) {
         this.hit.add(actor.id);
         this.health = Math.max(0, this.health - 1);
-        this.speed *= 0.28;
+        const pothole = actor.kind === 'pothole';
+        this.speed *= pothole ? 0.7 : 0.28;
+        if (pothole) this.events.push({ type: 'bump', text: 'Bump!', x: actor.x, z: actor.z, actorId: actor.id });
         this.invulnerable = 2;
         this.combo = 0;
         this.events.push({ type: 'crash', text: actor.kind === 'paan' ? 'Paan on the road! Shake it off.' : actor.kind === 'pothole' ? 'Oof! Watch those potholes.' : 'Easy, boss! Find a little space.', x: actor.x, z: actor.z, actorId: actor.id, priority: 'urgent' });
