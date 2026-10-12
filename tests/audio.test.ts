@@ -38,31 +38,33 @@ let context: MockContext;
 let constructor: ReturnType<typeof vi.fn>;
 let fetchMock: ReturnType<typeof vi.fn>;
 let documentMock: { hidden: boolean; addEventListener: ReturnType<typeof vi.fn> };
-let speech: { cancel: ReturnType<typeof vi.fn>; getVoices: ReturnType<typeof vi.fn>; speak: ReturnType<typeof vi.fn> };
 let visibility: () => void;
-const busLine = 'ওস্তাদ, বামে প্লাস্টিক!';
+let clock = 0;
+const busLine = 'bus-helper-plastic';
+const manifestJson = { 'bus-helper-plastic': { ai: true }, 'easy-brother': { ai: true } };
+const answer = async (url: string) => url.endsWith('manifest.json') ? { ok: true, json: async () => manifestJson } : { ok: true, arrayBuffer: async () => new ArrayBuffer(8) };
 const voices = () => context.sources.filter(source => !source.loop);
 const fieldSources = () => context.sources.filter(source => source.loop && source.buffer !== context.createBuffer.mock.results[0]?.value);
 
 beforeEach(() => {
   context = new MockContext();
   constructor = vi.fn(function () { return context; });
-  speech = { cancel: vi.fn(), getVoices: vi.fn(() => []), speak: vi.fn() };
+  clock = 0;
   documentMock = { hidden: false, addEventListener: vi.fn((name: string, handler: () => void) => {
     if (name === 'visibilitychange') visibility = handler;
   }) };
-  fetchMock = vi.fn(async () => ({ ok: true, arrayBuffer: async () => new ArrayBuffer(8) }));
-  vi.stubGlobal('window', { AudioContext: constructor, speechSynthesis: speech });
+  fetchMock = vi.fn(answer);
+  vi.stubGlobal('window', { AudioContext: constructor });
   vi.stubGlobal('document', documentMock);
   vi.stubGlobal('fetch', fetchMock);
-  vi.stubGlobal('SpeechSynthesisUtterance', class { constructor(public text: string) {} });
 });
 afterEach(() => vi.unstubAllGlobals());
 
 async function initialized() {
-  const audio = new GameAudio();
+  const audio = new GameAudio(() => clock);
   await audio.init();
-  await vi.waitFor(() => expect(context.decodeAudioData).toHaveBeenCalledTimes(6));
+  // Two global voice lines and the traffic loop.
+  await vi.waitFor(() => expect(context.decodeAudioData).toHaveBeenCalledTimes(3));
   // The loader stores each decoded result in the microtask following decodeAudioData.
   await Promise.resolve();
   return audio;
@@ -99,7 +101,7 @@ describe('street audio lifecycle', () => {
     expect(fieldSources()[1].buffer).toBe(first.buffer);
     audio.resetRide(); audio.update(10, 'bicycle', true);
     expect(fieldSources()[2].start).toHaveBeenCalledWith(0, 0);
-    expect(fetchMock).toHaveBeenCalledTimes(6);
+    expect(fetchMock).toHaveBeenCalledTimes(4);
   });
 
   it.each(['mute','hidden'] as const)('stops the real street recording on %s', async reason => {
@@ -124,18 +126,18 @@ describe('street audio lifecycle', () => {
 
   it('does not start a late-loading field recording after the player pauses', async () => {
     let release!: (response: unknown) => void;
-    fetchMock.mockImplementation(async(url:string)=>url.endsWith('.mp3')?await new Promise(resolve=>release=resolve):{ok:true,arrayBuffer:async()=>new ArrayBuffer(8)});
+    fetchMock.mockImplementation(async(url:string)=>url.endsWith('dhaka-traffic-loop.mp3')?await new Promise(resolve=>release=resolve):answer(url));
     const audio=new GameAudio();await audio.init();audio.update(10,'bicycle',true);audio.update(0,'bicycle',false);
     release({ok:true,arrayBuffer:async()=>new ArrayBuffer(8)});
-    await vi.waitFor(()=>expect(context.decodeAudioData).toHaveBeenCalledTimes(6));
+    await vi.waitFor(()=>expect(context.decodeAudioData).toHaveBeenCalledTimes(3));
     audio.update(0,'bicycle',false);expect(fieldSources()).toHaveLength(0);
     audio.update(10,'bicycle',true);expect(fieldSources()).toHaveLength(1);
   });
 
   it('shares its audio graph and clip requests across concurrent and repeated initialization', async () => {
-    const audio = new GameAudio();
+    const audio = new GameAudio(() => clock);
     await Promise.all([audio.init(), audio.init(), audio.init()]);
-    await vi.waitFor(() => expect(context.decodeAudioData).toHaveBeenCalledTimes(6));
+    await vi.waitFor(() => expect(context.decodeAudioData).toHaveBeenCalledTimes(3));
     const gains = context.createGain.mock.calls.length;
     const oscillators = context.createOscillator.mock.calls.length;
     const loops = context.sources.filter(source => source.loop).length;
@@ -146,29 +148,28 @@ describe('street audio lifecycle', () => {
     expect(context.sources.filter(source => source.loop)).toHaveLength(loops);
     expect(documentMock.addEventListener).toHaveBeenCalledTimes(1);
     expect(fetchMock.mock.calls.map(call => call[0]).sort()).toEqual([
-      '/audio/bus-helper.wav', '/audio/easy-brother.wav', '/audio/launch-caller.wav', '/audio/tea-vendor.wav', '/audio/vegetable-vendor.wav',
+      '/audio/voices/manifest.json', '/audio/voices/ai/bus-helper-plastic.mp3', '/audio/voices/ai/easy-brother.mp3',
       '/audio/dhaka-traffic-loop.mp3',
     ].sort());
   });
 
-  it('reuses decoded dialogue, enforces the speech cooldown, and releases ended sources', async () => {
+  it('reuses decoded dialogue, enforces the street-call spacing, and releases ended sources', async () => {
     const audio = await initialized();
     audio.update(10, 'bicycle', true);
     audio.say(busLine);
     const first = voices()[0];
     expect(first.start).toHaveBeenCalledOnce();
-    context.currentTime = 6.9;
+    clock = 6.9;
     audio.say(busLine);
     expect(voices()).toHaveLength(1);
     first.onended?.();
     expect(first.disconnect).toHaveBeenCalledOnce();
-    context.currentTime = 7;
+    clock = 7;
     audio.say(busLine);
     expect(voices()).toHaveLength(2);
     expect(voices()[1].buffer).toBe(first.buffer);
-    expect(context.decodeAudioData).toHaveBeenCalledTimes(6);
-    expect(fetchMock).toHaveBeenCalledTimes(6);
-    expect(speech.speak).not.toHaveBeenCalled();
+    expect(context.decodeAudioData).toHaveBeenCalledTimes(3);
+    expect(fetchMock).toHaveBeenCalledTimes(4);
   });
 
   it.each(['pause', 'mute', 'hidden'] as const)('stops live dialogue on %s and refuses another voice while inactive', async reason => {
@@ -176,12 +177,11 @@ describe('street audio lifecycle', () => {
     audio.update(10, 'bicycle', true);
     audio.say(busLine);
     const source = voices()[0];
-    context.currentTime = 10;
+    context.currentTime = 10; clock = 10;
     if (reason === 'pause') audio.update(0, 'bicycle', false);
     if (reason === 'mute') audio.setMuted(true);
     if (reason === 'hidden') { documentMock.hidden = true; visibility(); }
     expect(source.stop).toHaveBeenCalledOnce();
-    expect(speech.cancel).toHaveBeenCalled();
     const oscillators = context.createOscillator.mock.calls.length;
     audio.say(busLine); audio.horn('truck'); audio.impact(); audio.reward(); audio.warning('rear'); audio.nearMiss(2);
     expect(voices()).toHaveLength(1);
@@ -201,28 +201,12 @@ describe('street audio lifecycle', () => {
     expect(context.createOscillator).toHaveBeenCalledTimes(continuous);
   });
 
-  it('maps distinct street calls to distinct bundled recordings', async () => {
+  it('maps distinct lines to distinct bundled recordings', async () => {
     const audio = await initialized();
     audio.update(0, 'bicycle', true);
-    for (const text of [busLine, 'চা খাবেন?', 'আস্তে ভাই!']) {
-      audio.say(text); context.currentTime += 8;
-    }
-    expect(voices()).toHaveLength(3);
-    expect(new Set(voices().map(source => source.buffer)).size).toBe(3);
-    expect(speech.speak).not.toHaveBeenCalled();
-  });
-
-  it('falls back to a Bengali device voice when recordings fail, and cancels that voice on pause', async () => {
-    fetchMock.mockRejectedValue(new Error('offline'));
-    speech.getVoices.mockReturnValue([{ lang: 'bn-BD', name: 'Bengali' }]);
-    const audio = new GameAudio();
-    await audio.init();
-    audio.update(0, 'bicycle', true);
-    audio.say(busLine);
-    expect(voices()).toHaveLength(0);
-    expect(speech.speak).toHaveBeenCalledWith(expect.objectContaining({ text: busLine, lang: 'bn-BD' }));
-    audio.update(0, 'bicycle', false);
-    expect(speech.cancel).toHaveBeenCalled();
+    for (const id of [busLine, 'easy-brother']) { audio.say(id); clock += 8; }
+    expect(voices()).toHaveLength(2);
+    expect(new Set(voices().map(source => source.buffer)).size).toBe(2);
   });
 
   it('prioritizes directional rear warnings over dialogue and ambient sound', async () => {
@@ -234,7 +218,7 @@ describe('street audio lifecycle', () => {
     const warningTones = context.createOscillator.mock.calls.length;
     audio.warning('rear', -0.8);
     expect(context.createOscillator).toHaveBeenCalledTimes(warningTones);
-    context.currentTime = 8;
+    context.currentTime = 8; clock = 8;
     audio.warning('rear', 0.8); audio.say(busLine);
     expect(voices()).toHaveLength(1);
   });
@@ -248,6 +232,38 @@ describe('street audio lifecycle', () => {
     for (const node of temporary) expect(node.disconnect).toHaveBeenCalled();
     audio.resetRide(); audio.update(10, 'bicycle', true); audio.say(busLine);
     expect(voices()).toHaveLength(1);
+  });
+
+  it('plays a voice line by id, captions it even when muted, and spaces street calls by 7 seconds', async () => {
+    const audio = await initialized(), captions: string[] = [];
+    audio.onCaption = line => captions.push(line.id);
+    audio.update(10, 'bicycle', true);
+    expect(audio.say('bus-helper-plastic')).toBe(true);
+    clock = 3; expect(audio.say('bus-helper-plastic')).toBe(false); // street calls are 7 s apart
+    clock = 3; expect(audio.say('easy-brother')).toBe(true);        // reactions skip that spacing
+    audio.setMuted(true); clock = 20;
+    expect(audio.say('bus-helper-plastic')).toBe(false);
+    expect(captions).toEqual(['bus-helper-plastic', 'easy-brother', 'bus-helper-plastic']);
+  });
+
+  it('falls back to the caption alone when a voice file is missing', async () => {
+    fetchMock.mockImplementation(async (url: string) => url.endsWith('manifest.json')
+      ? { ok: true, json: async () => ({ 'easy-brother': { ai: true } }) } : { ok: false });
+    const audio = new GameAudio(() => clock); await audio.init(); await audio.prepareDistrict();
+    const captions: string[] = []; audio.onCaption = line => captions.push(line.id);
+    audio.update(10, 'bicycle', true);
+    expect(audio.say('easy-brother')).toBe(false);
+    expect(captions).toEqual(['easy-brother']);
+  });
+
+  it('decodes a district\'s lines only when asked, once', async () => {
+    fetchMock.mockImplementation(async (url: string) => url.endsWith('manifest.json')
+      ? { ok: true, json: async () => ({ 'launch-caller': { ai: true } }) } : { ok: true, arrayBuffer: async () => new ArrayBuffer(8) });
+    const audio = new GameAudio(() => clock); await audio.init(); await audio.prepareDistrict();
+    const before = fetchMock.mock.calls.filter(([u]) => String(u).includes('launch-caller')).length;
+    await audio.prepareDistrict('riverfront'); await audio.prepareDistrict('riverfront');
+    expect(before).toBe(0);
+    expect(fetchMock.mock.calls.filter(([u]) => String(u).includes('launch-caller'))).toHaveLength(1);
   });
 
   it('updates traffic and rear perspective without allocating a new audio graph every frame', async () => {

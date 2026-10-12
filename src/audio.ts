@@ -1,4 +1,5 @@
-/** CC0 street ambience, original effects, and bundled AI-generated Bangla calls. */
+/** CC0 street ambience, original effects, and street calls: the family's recording, else a bundled AI voice, else a caption. */
+import { lineById, linesFor, sanitizeManifest, voiceSource, voiceUrl, type District, type VoiceLine, type VoiceManifest } from './voices';
 export interface StreetAudioContext {
   neighborhood: string;
   intensity: number;
@@ -12,6 +13,7 @@ type EngineLayer = { oscillator: OscillatorNode; gain: GainNode; pan: StereoPann
 
 export class GameAudio {
   muted = false;
+  onCaption?: (line: VoiceLine) => void;
   private context?: AudioContext;
   private master?: GainNode;
   private ambience?: GainNode;
@@ -33,9 +35,13 @@ export class GameAudio {
   private lastReward = -10;
   private lastWarning = new Map<string, number>();
   private streetBeat = 0;
-  private clips = new Map<string, AudioBuffer>();
+  private manifest: VoiceManifest = {};
+  private manifestLoad?: Promise<void>;
+  private voiceBuffers = new Map<string, AudioBuffer>();
+  private voiceLoads = new Map<string, Promise<void>>();
+  private lastLine = new Map<string, number>();
+  private lastCall = -Infinity;
   private speechSource?: AudioBufferSourceNode;
-  private clipLoad?: Promise<void>;
   private fieldLoad?: Promise<void>;
   private fieldBuffer?: AudioBuffer;
   private fieldGain?: GainNode;
@@ -47,7 +53,8 @@ export class GameAudio {
   private lastImpact = -10;
   private lastJump = -10;
   private lastCoin = -10;
-  private lastSpeech = -10;
+
+  constructor(private clock: () => number = () => performance.now() / 1000) {}
 
   async init(): Promise<void> {
     if (!this.context) {
@@ -116,7 +123,7 @@ export class GameAudio {
       });
     }
     try { await this.context.resume(); } catch { /* A later user gesture can retry. */ }
-    this.clipLoad ??= this.loadClips();
+    if (!this.manifestLoad) { this.manifestLoad = this.loadManifest(); void this.prepareDistrict(); }
     this.fieldLoad ??= this.loadField();
   }
 
@@ -197,11 +204,11 @@ export class GameAudio {
   resetRide(): void {
     this.active = false; this.silenceRide();
     this.fieldOffset = 0;
-    this.lastHorn = this.lastImpact = this.lastSpeech = this.lastReward = this.lastJump = this.lastCoin = -10;
+    this.lastHorn = this.lastImpact = this.lastReward = this.lastJump = this.lastCoin = -10;
     this.nextStreetSound = this.context?.currentTime ?? 0;
     this.nextRearHorn = this.context?.currentTime ?? 0;
     this.duckUntil = this.warningUntil = 0; this.streetBeat = 0;
-    this.lastWarning.clear();
+    this.lastWarning.clear(); this.lastLine.clear(); this.lastCall = -Infinity;
   }
 
   warning(kind: 'rear' | 'paan' | 'cow', pan = 0): void {
@@ -313,47 +320,61 @@ export class GameAudio {
     this.tone(220, .35, .08, 'triangle', .08, 0, false, 110);
   }
 
-  say(text: string): void {
-    if (!this.ready() || !/[\u0980-\u09ff]/.test(text)) return;
-    if (this.context!.currentTime - this.lastSpeech < 7 || this.context!.currentTime < this.warningUntil) return;
-    const key = /সদরঘাট|লঞ্চ/.test(text) ? 'launch-caller' : /সবজি/.test(text) ? 'vegetable-vendor' : text.includes('ওস্তাদ') ? 'bus-helper' : text.includes('চা') ? 'tea-vendor' : 'easy-brother';
-    const buffer = this.clips.get(key);
-    if (buffer) {
-      this.stopSpeech();
-      this.lastSpeech = this.context!.currentTime;
-      const source = this.context!.createBufferSource();
-      source.buffer = buffer;
-      this.duckUntil = Math.max(this.duckUntil, this.context!.currentTime + (buffer.duration || 3));
-      source.connect(this.master!);
-      this.speechSource = source;
-      source.onended = () => { source.disconnect(); if (this.speechSource === source) this.speechSource = undefined; };
-      source.start();
-      return;
-    }
-    if (!('speechSynthesis' in window)) return;
-    const voice = window.speechSynthesis.getVoices().find(v => /^bn(?:-|_)?/i.test(v.lang));
-    if (!voice) return;
+  /** Decodes the voice lines for one district (or, with no district, the lines heard everywhere) the first time they are needed. */
+  async prepareDistrict(district?: District): Promise<void> {
+    await this.manifestLoad;
+    await Promise.all(linesFor(district).map(line => this.loadVoice(line.id)));
+  }
+
+  /** Captions a line whenever it may happen now, and plays it when sound is on and its audio is ready. Returns whether audio played. */
+  say(id: string): boolean {
+    const line = lineById(id);
+    if (!line) return false;
+    const now = this.clock();
+    if (now - (this.lastLine.get(id) ?? -Infinity) < (line.cooldown ?? 0)) return false;
+    if (!line.reaction && now - this.lastCall < 7) return false;
+    if (this.context && this.context.currentTime < this.warningUntil) return false;
+    this.lastLine.set(id, now); if (!line.reaction) this.lastCall = now;
+    this.onCaption?.(line);
+    const buffer = this.voiceBuffers.get(id);
+    if (!buffer || !this.ready()) return false;
     this.stopSpeech();
-    this.lastSpeech = this.context!.currentTime;
-    this.duckUntil = Math.max(this.duckUntil, this.context!.currentTime + 3);
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.voice = voice; utterance.lang = voice.lang; utterance.rate = 1.05; utterance.volume = 0.65;
-    window.speechSynthesis.speak(utterance);
+    const source = this.context!.createBufferSource();
+    source.buffer = buffer;
+    this.duckUntil = Math.max(this.duckUntil, this.context!.currentTime + (buffer.duration || 3));
+    source.connect(this.master!);
+    this.speechSource = source;
+    source.onended = () => { source.disconnect(); if (this.speechSource === source) this.speechSource = undefined; };
+    source.start();
+    return true;
   }
 
   private stopSpeech(): void {
     if (this.speechSource) { try { this.speechSource.stop(); } catch { /* Already ended. */ } this.speechSource = undefined; }
-    if ('speechSynthesis' in window) window.speechSynthesis.cancel();
   }
 
-  private async loadClips(): Promise<void> {
-    await Promise.all(['bus-helper', 'tea-vendor', 'easy-brother', 'launch-caller', 'vegetable-vendor'].map(async key => {
-      try {
-        const response = await fetch(`${import.meta.env.BASE_URL}audio/${key}.wav`);
-        if (!response.ok) return;
-        this.clips.set(key, await this.context!.decodeAudioData(await response.arrayBuffer()));
-      } catch { /* Captions and system speech remain available offline. */ }
-    }));
+  private loadVoice(id: string): Promise<void> {
+    const source = voiceSource(id, this.manifest);
+    if (source === 'caption' || !this.context) return Promise.resolve();
+    let load = this.voiceLoads.get(id);
+    if (!load) {
+      load = (async () => {
+        try {
+          const response = await fetch(voiceUrl(import.meta.env.BASE_URL, id, source));
+          if (!response.ok) return;
+          this.voiceBuffers.set(id, await this.context!.decodeAudioData(await response.arrayBuffer()));
+        } catch { /* The caption still carries the line. */ }
+      })();
+      this.voiceLoads.set(id, load);
+    }
+    return load;
+  }
+
+  private async loadManifest(): Promise<void> {
+    try {
+      const response = await fetch(`${import.meta.env.BASE_URL}audio/voices/manifest.json`);
+      if (response.ok) this.manifest = sanitizeManifest(await response.json());
+    } catch { /* Without a manifest every line is caption-only. */ }
   }
 
   private async loadField(): Promise<void> {

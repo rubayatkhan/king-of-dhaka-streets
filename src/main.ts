@@ -32,7 +32,7 @@ let selected=Math.floor(availableStage(save)/3),lesson=availableStage(save)%3,si
 const stageId=()=>selected*3+lesson;
 const districts:Record<Neighborhood,{name:string;bangla:string;tag:string}>={bazaar:{name:'Shankhari Bazaar',bangla:'শাঁখারীবাজার',tag:'Balconies, bakarkhani & bicycle bells'},riverfront:{name:'Sadarghat',bangla:'সদরঘাট',tag:'Launch horns over the Buriganga'},boulevard:{name:'Karwan Bazar',bangla:'কারওয়ান বাজার',tag:'Wholesale hustle. Rush-hour nerve.'}};
 const deference=['Find your own gap','A little room for a rickshaw','Small traffic starts to yield','Your presence opens a lane','The city makes way for the king'];
-const audio=new GameAudio();audio.setMuted(save.muted);
+const audio=new GameAudio();audio.setMuted(save.muted);audio.onCaption=line=>{if(!line.reaction&&performance.now()>toastUntil)showToast(`${line.bangla} · ${line.caption}`);};
 let leftHeld=false,rightHeld=false;
 let steer=0,brake=false,desired=0,accumulator=0,last=performance.now(),screen='menu',toastUntil=0,feedbackUntil=0,nudgeUntil=0,seed=27,ending=false,nextVendor=12,splashUntil=0,swerveUntil=0,hornUntil=0,comboUntil=0,districtUntil=0,lastDistrict:Neighborhood=sim.neighborhood,toastPriority=0,lastFailure='';
 const chipKinds=[['cha','☕','Cha speed'],['magnet','🧲','Taka magnet'],['belly','🍢','Full belly'],['stomach','🤢','পেট গুড়গুড়!']] as const;
@@ -99,7 +99,7 @@ async function start(){
  $('#hud').inert=false;$('#menu').classList.add('hidden');$('#overlay').classList.add('hidden');$('#hud').classList.remove('hidden');
  $('#race-marker').innerHTML=vehicleIcon(selected);$('#hud').classList.toggle('calm',calm());$('#horn-label').textContent=selected<2?'Bell':'Horn';$('#horn').setAttribute('aria-label',selected<2?'Ring bell':'Sound horn');
  $('#authority-hud').textContent=deference[selected];showToast(`${sim.stage.name} · ${sim.stage.objective}`);
- try{await audio.init();}catch{showToast('Sound unavailable. Captions are on.');}
+ try{await audio.init();void audio.prepareDistrict(sim.neighborhood);}catch{showToast('Sound unavailable. Captions are on.');}
 }
 function showToast(text:string,urgent=false){const now=performance.now();if(!urgent&&toastPriority&&now<toastUntil)return;toastPriority=urgent?1:0;$('#toast').textContent=text;$('#toast').classList.toggle('urgent',urgent);$('#toast').classList.add('shown');toastUntil=now+(urgent?3000:3200);}
 function announceDistrict(){const district=districts[sim.neighborhood];$('#district-name').textContent=district.name;$('#district-banner strong').textContent=district.bangla;$('#district-banner span').textContent=district.name;$('#district-banner').classList.add('visible');districtUntil=performance.now()+2200;}
@@ -207,16 +207,16 @@ function frame(now:number){const dt=Math.min((now-last)/1000,.05);last=now;
  if(now>districtUntil||rear)$('#district-banner').classList.remove('visible');
  $('#rear-alert').classList.toggle('hidden',!rear||sim.status!=='playing');
  if(rear){const swerving=now<swerveUntil;$('#rear-title').textContent=`${rear.kind==='bus'?'BUS':'TRUCK'} ${swerving?'SWERVES ROUND YOU!':'BEHIND!'}`;$('#rear-alert small').textContent=swerving?'Hold your line':'Leave the highlighted line';$('#rear-alert').style.setProperty('--urgency',String(rear.urgency));$('#rear-vehicle').style.left=`${Math.max(8,Math.min(92,(rear.x+5.3)/10.6*100))}%`;$('#rear-player').style.left=`${(sim.x+5.3)/10.6*100}%`;}
- if(sim.status==='playing'&&sim.elapsed>nextVendor){nextVendor+=18;if(now>toastUntil&&!rear){const localCall=sim.neighborhood==='riverfront'?['সদরঘাট! লঞ্চ ছাড়বে!','সদরঘাট! · The launch is leaving!']:sim.neighborhood==='boulevard'?['তাজা সবজি!','তাজা সবজি! · Fresh vegetables!']:['এই, চা! গরম চা! এক কাপ নিয়ে যান!','চা! গরম চা! · Hot tea, fresh from the kettle.'];audio.say(localCall[0]);showToast(localCall[1]);}}
+ if(sim.status==='playing'&&sim.elapsed>nextVendor){nextVendor+=18;if(now>toastUntil&&!rear){audio.say(sim.neighborhood==='riverfront'?'launch-caller':sim.neighborhood==='boulevard'?'vegetable-vendor':'tea-vendor');}}
  const events=sim.events.splice(0);
  for(const event of events){
   if(event.type==='jump')audio.jump(VEHICLES[selected].id);if(event.type==='land')world?.land();if(event.type==='bump'){world?.shake(.35);world?.land();audio.bump();}
   if(event.type==='horn'){hornUntil=now+250;$('#horn').classList.add('ringing');audio.horn(VEHICLES[selected].id);if(!rear)showToast(event.text);}
-  if(event.type==='warning'){showToast(event.text);if(event.text.includes('Ostad'))audio.say('ওস্তাদ, বামে প্লাস্টিক!');if(/cow|goru/i.test(event.text))audio.warning('cow',(event.x??0)/5.3);}
+  if(event.type==='warning'){showToast(event.text);if(event.text.includes('Ostad'))audio.say('bus-helper-plastic');if(/cow|goru/i.test(event.text))audio.warning('cow',(event.x??0)/5.3);}
   // The rear alert card itself carries these, so no toast stacks under it onto the rider on a short landscape screen.
   if(event.type==='rear-warning')audio.warning('rear',(event.x??0)/5.3);if(event.type==='rear-swerve'){audio.warning('rear',(event.x??0)/5.3);swerveUntil=now+2500;}
   if(event.type==='paan-warning'){audio.warning('paan',(event.x??0)/5.3);showToast(event.text,true);}
-  if(event.type==='crash'){lastFailure=event.text;if(/paan/i.test(event.text)){splashUntil=now+1900;$('#paan-splash').classList.add('splashed');}audio.impact();audio.say('আস্তে ভাই, একটু জায়গা দেন!');showToast(event.text,true);$('#impact').classList.add('hit');feedbackUntil=now+260;}
+  if(event.type==='crash'){lastFailure=event.text;if(/paan/i.test(event.text)){splashUntil=now+1900;$('#paan-splash').classList.add('splashed');}audio.impact();audio.say('easy-brother');showToast(event.text,true);$('#impact').classList.add('hit');feedbackUntil=now+260;}
   if(event.type==='coin')audio.coin(event.chain??1);if(event.type==='snack'){audio.snack(event.kind??'cha');showToast(event.text);}if(event.type==='stomach'){audio.stomach();showToast(event.text,true);}if(event.type==='belly'){audio.belly();showToast(event.text);}
   if(event.type==='near-miss'){audio.nearMiss(sim.combo);$('#combo').innerHTML=`<small>বাঁচলাম!</small>${event.text}`;$('#combo').classList.add('visible','close-shave');comboUntil=now+1500;}
   if(event.type==='pass'&&now>comboUntil){$('#combo').textContent=event.text;$('#combo').classList.remove('close-shave');$('#combo').classList.add('visible');comboUntil=now+900;}

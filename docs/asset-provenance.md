@@ -18,11 +18,13 @@ Five original text-to-speech assets were generated with the connected HeyGen ser
 
 | File | Text | Requested language | Speed |
 | --- | --- | --- | --- |
-| `public/audio/bus-helper.wav` | ওস্তাদ, বামে প্লাস্টিক! | bn | 1.12 |
-| `public/audio/tea-vendor.wav` | এই, চা! গরম চা! এক কাপ নিয়ে যান! | bn | 1.10 |
-| `public/audio/easy-brother.wav` | আস্তে ভাই, একটু জায়গা দেন! | bn | 1.08 |
-| `public/audio/launch-caller.wav` | সদরঘাট! সদরঘাট! লঞ্চ ছাড়বে, তাড়াতাড়ি আসেন! | bn | 1.12 |
-| `public/audio/vegetable-vendor.wav` | তাজা সবজি! লাউ নেন, টমেটো নেন! | bn | 1.15 |
+| `public/audio/voices/ai/bus-helper-plastic.mp3` | ওস্তাদ, বামে প্লাস্টিক! | bn | 1.12 |
+| `public/audio/voices/ai/tea-vendor.mp3` | এই, চা! গরম চা! এক কাপ নিয়ে যান! | bn | 1.10 |
+| `public/audio/voices/ai/easy-brother.mp3` | আস্তে ভাই, একটু জায়গা দেন! | bn | 1.08 |
+| `public/audio/voices/ai/launch-caller.mp3` | সদরঘাট! সদরঘাট! লঞ্চ ছাড়বে, তাড়াতাড়ি আসেন! | bn | 1.12 |
+| `public/audio/voices/ai/vegetable-vendor.mp3` | তাজা সবজি! লাউ নেন, টমেটো নেন! | bn | 1.15 |
+
+Converted on 2026-10-12 from the original WAV deliveries to mono 64 kbps MP3, loudness-normalized to −16 LUFS.
 
 Vehicle/warning effects and additional environmental textures are original Web Audio synthesis. Native-speaker pronunciation, idiom and delivery review remains pending. The app identifies the Bangla calls as AI-generated.
 
