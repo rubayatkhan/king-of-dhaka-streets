@@ -47,6 +47,8 @@ export class MusicPlayer {
   private timer?: ReturnType<typeof setInterval>;
   private scene: Scene = 'menu'; private previous: Scene = 'menu'; private switchAt = 0;
   private bed?: { scene: Scene; source: AudioBufferSourceNode; from: number };
+  /** Beds already told to stop that still sound until their stop time, so their scene's synthesized base stays quiet. */
+  private outgoing: { scene: Scene; from: number; until: number }[] = [];
   private beds = new Map<Scene, AudioBuffer>(); private loads = new Map<Scene, Promise<void>>();
   private manifest?: Promise<BedManifest | undefined>;
 
@@ -79,7 +81,8 @@ export class MusicPlayer {
       const file = manifest?.beds[scene];
       if (!file) return;
       const buffer = await this.host.fetchBuffer(`${this.host.base}audio/music/${file}`).catch(() => undefined);
-      if (!buffer) return;
+      // The bed must cover the whole loop; MP3 padding past it is cut by loopEnd.
+      if (!buffer || !(buffer.duration >= LOOP_SECONDS - 0.05)) return;
       this.beds.set(scene, buffer);
       if (this.scheduler.running && this.scene === scene && this.bed?.scene !== scene) this.syncBed(this.scheduler.nextBar(this.host.context.currentTime));
     }));
@@ -99,24 +102,31 @@ export class MusicPlayer {
     const buffer = this.beds.get(this.scene);
     if (!buffer) return;
     const source = this.host.context.createBufferSource();
-    source.buffer = buffer; source.loop = true; source.connect(this.layers.base);
+    source.buffer = buffer; source.loop = true; source.loopStart = 0; source.loopEnd = LOOP_SECONDS; source.connect(this.layers.base);
     source.onended = () => source.disconnect();
     source.start(at, (at - this.scheduler.timeOf(0)) % LOOP_SECONDS);
     this.bed = { scene: this.scene, source, from: at };
   }
 
-  /** Drops the reference straight away, so a new bed can start at the same bar; the old source keeps its scheduled stop. */
+  /** Drops the reference straight away, so a new bed can start at the same bar; the old source sounds until its scheduled stop. */
   private stopBed(at: number): void {
+    const now = this.host.context.currentTime;
+    this.outgoing = this.outgoing.filter(span => span.until > now);
     if (!this.bed) return;
-    const { source } = this.bed;
+    const { scene, source, from } = this.bed;
     try { source.stop(at); } catch { /* Already stopped. */ }
+    if (at > from) this.outgoing.push({ scene, from, until: at });
     this.bed = undefined;
+  }
+
+  private bedCovers(scene: Scene, when: number): boolean {
+    return (this.bed?.scene === scene && when >= this.bed.from) || this.outgoing.some(span => span.scene === scene && when >= span.from && when < span.until);
   }
 
   private tick(): void {
     for (const step of this.scheduler.due(this.host.context.currentTime)) {
       const when = this.scheduler.timeOf(step), scene = this.sceneAt(when), loopStep = step % LOOP_STEPS;
-      const bedPlaying = this.bed?.scene === scene && when >= this.bed.from;
+      const bedPlaying = this.bedCovers(scene, when);
       for (const layer of LAYERS) {
         if (layer === 'base' && bedPlaying) continue;
         for (const recipe of patternSteps(scene, layer)[loopStep]) this.host.play(recipe, when, this.layers[layer]);

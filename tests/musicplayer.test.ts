@@ -65,7 +65,7 @@ describe('music player', () => {
     p.setState(ride); await vi.advanceTimersByTimeAsync(0);
     h.context.currentTime = BAR * 2.5; h.arrive(); await vi.advanceTimersByTimeAsync(0);
     const bed = h.sources.at(-1)!, [when, offset] = bed.start.mock.calls[0] as [number, number];
-    expect(bed.loop).toBe(true);
+    expect(bed.loop).toBe(true); expect((bed as unknown as { loopStart: number; loopEnd: number }).loopStart).toBe(0); expect((bed as unknown as { loopEnd: number }).loopEnd).toBe(LOOP_SECONDS);
     expect(when).toBeCloseTo(.05 + BAR * 3, 6); expect(offset).toBeCloseTo(BAR * 3 % LOOP_SECONDS, 6);
   });
 
@@ -75,5 +75,25 @@ describe('music player', () => {
     p.setState(ride); await vi.advanceTimersByTimeAsync(0);
     expect(h.sources.filter(s => s.start.mock.calls.length && !s.stop.mock.calls.length)).toHaveLength(1);
     expect(vi.getTimerCount()).toBe(1);
+  });
+
+  it('keeps the outgoing bed in charge of its scene until the bar where the next scene takes over', async () => {
+    const h = makeHost({ bazaar: 'bazaar.mp3' }), p = new MusicPlayer(h.host);
+    p.setState(ride); await vi.advanceTimersByTimeAsync(0);
+    const bazaarBed = h.sources[0], base = (p as unknown as { layers: { base: unknown } }).layers.base;
+    h.context.currentTime = BAR * 1.5; p.setState({ ...ride, scene: 'riverfront' });
+    const switchAt = .05 + BAR * 2, from = h.host.play.mock.calls.length;
+    while (h.context.currentTime < switchAt + .3) { h.context.currentTime += .02; vi.advanceTimersByTime(25); }
+    const baseCalls = (h.host.play.mock.calls.slice(from) as unknown as [unknown, number, unknown][]).filter(([, , out]) => out === base);
+    expect(baseCalls.filter(([, when]) => when < switchAt - 1e-9)).toEqual([]);
+    expect(baseCalls.some(([, when]) => when >= switchAt - 1e-9)).toBe(true);
+    expect(bazaarBed.stop.mock.calls.at(-1)![0]).toBeCloseTo(switchAt, 9);
+  });
+
+  it('ignores a decoded bed shorter than the loop', async () => {
+    const h = makeHost({ bazaar: 'bazaar.mp3' }), p = new MusicPlayer(h.host);
+    h.host.fetchBuffer.mockImplementation(async () => ({ duration: LOOP_SECONDS - .2 } as AudioBuffer));
+    p.setState(ride); await vi.advanceTimersByTimeAsync(0);
+    expect(h.sources).toHaveLength(0);
   });
 });
