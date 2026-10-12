@@ -154,7 +154,8 @@ export function placePickups(input: PlacementInput): { coins: Coin[]; snacks: Sn
       const zs = Array.from({ length: count }, (_, k) => -(start + k * COIN_SPACING));
       if (ambushZs.some(tz => zs[0] > tz - 40 && zs[zs.length - 1] < tz + 45)) continue;
       // The lane must also be open for the approach (6 m before) and the run-out (12 m after), or a rider gives the trail up.
-      const reach = [zs[0] + 6, ...zs, zs[zs.length - 1] - 12];
+      // Sample every metre: a hazard is only ~1.4 m long, so spot checks at the two ends can miss one.
+      const reach = Array.from({ length: Math.ceil(zs[0] + 6 - (zs[zs.length - 1] - 12)) + 1 }, (_, k) => zs[0] + 6 - k);
       if (!zs.every(z => inRoute(z) && free(x, z)) || !reach.every(z => clear(x, z))) continue;
       lay(x, zs, 1, 'safe');
       break;

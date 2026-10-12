@@ -111,6 +111,21 @@ describe('coin trails and snack placement', () => {
       }
     }
   });
+  it('never leads a safe trail into a pothole, paan spill or cow on its line within 6 m', () => {
+    const bad: string[] = [];
+    let trails = 0;
+    for (let stage = 0; stage < 15; stage++) for (let i = 1; i <= 40; i++) {
+      const seed = Math.imul(i, 2654435761) >>> 0, sim = new Simulation(Math.floor(stage / 3), seed, stage % 3);
+      for (const trail of groups(sim.coins.filter(c => c.trail === 'safe'))) {
+        trails++;
+        const x = trail[0].x, first = trail[0].z, last = trail[trail.length - 1].z;
+        const hazard = sim.traffic.find(t => (t.kind === 'pothole' || t.kind === 'paan' || t.kind === 'cow') && Math.abs(t.x - x) < t.width / 2 &&
+          t.z + t.length / 2 > last - 6 && t.z - t.length / 2 < first + 6);
+        if (hazard) bad.push(`stage ${stage} seed ${seed}: trail x=${x} ${first.toFixed(1)}..${last.toFixed(1)}, ${hazard.kind} at z=${hazard.z}`);
+      }
+    }
+    expect(bad, `${bad.length}/${trails} safe trails`).toEqual([]);
+  });
   it('arcs coins only over hazards this vehicle can clear in the air, and never for cars or trucks', () => {
     for (let vehicle = 0; vehicle < 5; vehicle++) for (let seed = 1; seed <= 6; seed++) {
       const { sim, coins } = placed(vehicle, 1, seed), clears = JUMPS[VEHICLES[vehicle].id].clears;
