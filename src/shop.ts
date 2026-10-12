@@ -4,7 +4,7 @@ import type { Progress } from './progress';
 import type { VehicleKind } from './simulation';
 
 export type ShopTab = 'looks' | 'power-ups';
-export type RowState = 'buy' | 'too-poor' | 'equip' | 'equipped' | 'maxed';
+export type RowState = 'buy' | 'too-poor' | 'equip' | 'equipped' | 'maxed' | 'locked';
 export interface ShopRow { id: string; name: string; detail: string; price: number; state: RowState; level?: number }
 
 const SLOT_NAMES = { paint: 'Paint', art: 'Art', extra: 'Extra', outfit: 'Outfit' } as const;
@@ -13,12 +13,23 @@ const POWER_UP_ICONS: Record<PowerUp, string> = { cha: '☕', jhalmuri: '🧲', 
 const EXTRA_ICONS: Record<string, string> = { streamers: '🎏', basket: '🧺', garland: '🌸', 'red-helmet': '⛑️' };
 const ART_ICONS: Record<string, string> = { peacock: '🦚', tiger: '🐅', city: '🌃', rose: '🌹' };
 const hex = (n: number) => `#${n.toString(16).padStart(6, '0')}`;
+const lockedFor = (r: ShopRow) => LOOKS.find(i => i.id === r.id)?.vehicle;
+
+// A phone double tap fires two clicks, and the Bazaar redraws under the finger: a second tap on the same
+// item this soon after an action would buy the next level or undo the purchase, so it is ignored.
+export const REPEAT_TAP_MS = 400;
+export interface Tap { key: string; at: number }
+
+export function isRepeatTap(last: Tap | undefined, key: string, now: number): boolean {
+  return last !== undefined && last.key === key && now - last.at < REPEAT_TAP_MS;
+}
 
 export function actionLabel(r: ShopRow, taka: number): string {
   if (r.state === 'buy') return `Buy · ৳${r.price}`;
   if (r.state === 'too-poor') return `Need ৳${r.price - taka} more`;
   if (r.state === 'equip') return 'Use';
   if (r.state === 'equipped') return 'Using ✓ · tap to remove';
+  if (r.state === 'locked') return `Unlocks with the ${lockedFor(r)}`;
   return 'Maxed ★';
 }
 
@@ -27,6 +38,7 @@ export function actionAria(r: ShopRow, taka: number): string {
   if (r.state === 'too-poor') return `${r.name} costs ৳${r.price} — you need ৳${r.price - taka} more`;
   if (r.state === 'equip') return `Use ${r.name}`;
   if (r.state === 'equipped') return `Using ${r.name} — tap to remove`;
+  if (r.state === 'locked') return `${r.name} unlocks with the ${lockedFor(r)}`;
   return `${r.name} is maxed`;
 }
 
@@ -34,13 +46,15 @@ function buyState(taka: number, price: number): 'buy' | 'too-poor' {
   return taka >= price ? 'buy' : 'too-poor';
 }
 
-export function lookRows(save: Progress, vehicle: VehicleKind): ShopRow[] {
+// Looks for a vehicle the player has not unlocked yet cannot be bought; outfits suit every ride.
+export function lookRows(save: Progress, vehicle: VehicleKind, unlocked: boolean): ShopRow[] {
   return LOOKS.filter(item => item.vehicle === vehicle || item.vehicle === 'rider').map(item => {
     const owned = save.owned.includes(item.id);
     const equipped = save.equipped[`${item.vehicle}:${item.slot}`] === item.id;
     let state: RowState;
     if (equipped) state = 'equipped';
     else if (owned) state = 'equip';
+    else if (!unlocked && item.vehicle !== 'rider') state = 'locked';
     else state = buyState(save.taka, item.price);
     return {
       id: item.id,
@@ -93,13 +107,13 @@ function pips(level: number): string {
   return `<span class="pips" aria-hidden="true">${lit}</span><span class="level">Level ${level} of ${MAX_LEVEL}</span>`;
 }
 
-export function renderShop(save: Progress, vehicle: VehicleKind, tab: ShopTab): string {
-  const rows = tab === 'looks' ? lookRows(save, vehicle) : powerUpRows(save);
+export function renderShop(save: Progress, vehicle: VehicleKind, tab: ShopTab, unlocked: boolean): string {
+  const rows = tab === 'looks' ? lookRows(save, vehicle, unlocked) : powerUpRows(save);
   const attr = tab === 'looks' ? 'data-look' : 'data-upgrade';
   return rows.map(r => {
-    const tag = r.state === 'buy' || r.state === 'too-poor' ? `<span class="tag">৳${r.price}</span>` : '';
+    const tag = r.state === 'buy' || r.state === 'too-poor' || r.state === 'locked' ? `<span class="tag">৳${r.price}</span>` : '';
     const level = r.level === undefined ? '' : pips(r.level);
-    const button = `<button ${attr}="${r.id}" ${r.state === 'maxed' ? 'disabled' : ''} aria-label="${actionAria(r, save.taka)}">${actionLabel(r, save.taka)}</button>`;
+    const button = `<button ${attr}="${r.id}" ${r.state === 'maxed' || r.state === 'locked' ? 'disabled' : ''} aria-label="${actionAria(r, save.taka)}">${actionLabel(r, save.taka)}</button>`;
     return `<div class="shop-card ${r.state}"><div class="shop-art">${swatch(r, tab)}${tag}</div><div class="shop-info"><strong>${r.name}</strong>${level}<small>${r.detail}</small></div>${button}</div>`;
   }).join('');
 }

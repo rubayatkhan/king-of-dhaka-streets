@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { buyLook, buyUpgrade } from '../src/economy';
 import { loadProgress } from '../src/progress';
-import { actionAria, actionLabel, lookRows, powerUpRows, renderShop, type ShopRow } from '../src/shop';
+import { REPEAT_TAP_MS, actionAria, actionLabel, isRepeatTap, lookRows, powerUpRows, renderShop, type ShopRow } from '../src/shop';
 const wallet = (taka: number) => { const p = loadProgress(null, null); p.taka = taka; return p; };
 
 describe('the Bazaar view', () => {
   it('lists the vehicle\'s looks plus every outfit, each with the right action', () => {
     const p = wallet(1000); buyLook(p, 'bicycle-basket'); buyLook(p, 'bicycle-streamers'); p.taka = 160;
-    const rows = lookRows(p, 'bicycle');
+    const rows = lookRows(p, 'bicycle', true);
     expect(rows.map(r => r.id)).toEqual(['bicycle-paint-mango', 'bicycle-paint-jamun', 'bicycle-streamers', 'bicycle-basket', 'outfit-lungi', 'outfit-panjabi', 'outfit-school', 'outfit-cricket']);
     const state = (id: string) => rows.find(r => r.id === id)!.state;
     expect(state('bicycle-streamers')).toBe('equipped'); expect(state('bicycle-basket')).toBe('equip');
@@ -21,7 +21,7 @@ describe('the Bazaar view', () => {
     expect(rows[2].detail).toBe('Maxed: stomach risk −10 pts');
   });
   it('renders buttons the game can act on', () => {
-    const p = wallet(0), looks = renderShop(p, 'rickshaw', 'looks'), ups = renderShop(p, 'rickshaw', 'power-ups');
+    const p = wallet(0), looks = renderShop(p, 'rickshaw', 'looks', true), ups = renderShop(p, 'rickshaw', 'power-ups', true);
     expect(looks).toContain('data-look="rickshaw-art-tiger"'); expect(looks).toContain('৳500');
     expect(ups).toContain('data-upgrade="jhalmuri"'); expect(ups).toContain('Need ৳200 more');
   });
@@ -38,14 +38,41 @@ describe('the Bazaar view', () => {
     expect(actionAria(row('buy'), 650)).toBe('Buy Panjabi for ৳300');
     expect(actionAria(row('too-poor', 800), 650)).toBe('Panjabi costs ৳800 — you need ৳150 more');
     expect(actionAria(row('equipped'), 0)).toBe('Using Panjabi — tap to remove');
-    const p = wallet(650), html = renderShop(p, 'truck', 'looks');
+    const p = wallet(650), html = renderShop(p, 'truck', 'looks', true);
     expect(html).toContain('aria-label="Peacock truck art costs ৳800 — you need ৳150 more"');
     expect(html).toContain('>Need ৳150 more<');
   });
   it('shows each power-up level as four pips', () => {
     const p = wallet(0); p.upgrades.jhalmuri = 2;
-    const html = renderShop(p, 'bicycle', 'power-ups');
+    const html = renderShop(p, 'bicycle', 'power-ups', true);
     expect(html.match(/class="pip on"/g)?.length).toBe(2);
     expect(html.match(/class="pip"/g)?.length).toBe(10);
+  });
+  it('locks looks for a vehicle not yet unlocked, while outfits stay buyable', () => {
+    const p = wallet(5000), rows = lookRows(p, 'truck', false);
+    const art = rows.find(r => r.id === 'truck-art-peacock')!, outfit = rows.find(r => r.id === 'outfit-lungi')!;
+    expect(art.state).toBe('locked'); expect(outfit.state).toBe('buy');
+    expect(actionLabel(art, p.taka)).toBe('Unlocks with the truck');
+    expect(actionAria(art, p.taka)).toBe('Peacock truck art unlocks with the truck');
+    const html = renderShop(p, 'truck', 'looks', false);
+    expect(html).toContain('<button data-look="truck-art-peacock" disabled aria-label="Peacock truck art unlocks with the truck">Unlocks with the truck</button>');
+    expect(html).toMatch(/<button data-look="outfit-lungi"\s+aria-label="Buy Lungi and gamchha for ৳300">Buy · ৳300<\/button>/);
+    expect(lookRows(p, 'truck', true).find(r => r.id === 'truck-art-peacock')!.state).toBe('buy');
+  });
+  it('keeps a look already owned for a locked vehicle usable', () => {
+    const p = wallet(0); p.owned.push('truck-art-rose');
+    expect(lookRows(p, 'truck', false).find(r => r.id === 'truck-art-rose')!.state).toBe('equip');
+  });
+});
+
+describe('the Bazaar double-tap guard', () => {
+  it('ignores a second tap on the same item soon after an action', () => {
+    const last = { key: 'upgrade:cha', at: 1000 };
+    expect(isRepeatTap(undefined, 'upgrade:cha', 1000)).toBe(false);
+    expect(isRepeatTap(last, 'upgrade:cha', 1000 + 120)).toBe(true);
+    expect(isRepeatTap(last, 'upgrade:cha', 1000 + REPEAT_TAP_MS - 1)).toBe(true);
+    expect(isRepeatTap(last, 'upgrade:cha', 1000 + REPEAT_TAP_MS)).toBe(false);
+    expect(isRepeatTap(last, 'look:outfit-lungi', 1000 + 120)).toBe(false);
+    expect(REPEAT_TAP_MS).toBe(400);
   });
 });
