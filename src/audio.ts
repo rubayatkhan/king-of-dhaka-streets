@@ -259,9 +259,9 @@ export class GameAudio {
   jump(vehicle: string): void {
     if (!this.ready() || this.context!.currentTime - this.lastJump < 0.25) return;
     this.lastJump = this.context!.currentTime;
-    const heavy = /car|truck/i.test(vehicle);
-    // A springy rise for light vehicles, a low suspension thump for heavy ones.
-    this.tone(heavy ? 92 : 330, heavy ? 0.2 : 0.16, heavy ? 0.16 : 0.07, heavy ? 'sine' : 'triangle', 0, 0, false, heavy ? 62 : 660);
+    // A low suspension thump for heavy vehicles, a springy rise for light ones.
+    if (/car|truck/i.test(vehicle)) this.tone(92, 0.2, 0.16, 'sine', 0, 0, false, 62);
+    else this.tone(330, 0.16, 0.07, 'triangle', 0, 0, false, 660);
     if (/bicycle/i.test(vehicle)) this.tone(1568, 0.3, 0.06, 'sine', 0.05);
   }
 

@@ -91,9 +91,11 @@ export class Simulation {
     return true;
   }
 
+  private get jumpProfile(): JumpProfile { return JUMPS[VEHICLES[this.vehicleIndex].id]; }
+
   private updateJump(dt: number): void {
     if (!this.airborne) { this.jumpCooldown = Math.max(0, this.jumpCooldown - dt); return; }
-    const profile = JUMPS[VEHICLES[this.vehicleIndex].id];
+    const profile = this.jumpProfile;
     this.airTime += dt;
     const t = this.airTime / profile.airtime;
     if (t < 1) { this.y = 4 * profile.height * t * (1 - t); return; }
@@ -102,7 +104,7 @@ export class Simulation {
   }
 
   private clears(kind: string): boolean {
-    return this.airborne && (JUMPS[VEHICLES[this.vehicleIndex].id].clears as string[]).includes(kind);
+    return this.airborne && (this.jumpProfile.clears as string[]).includes(kind);
   }
 
   private random(): number {
@@ -242,9 +244,9 @@ export class Simulation {
       const overlapZ = Math.abs(ahead) < (vehicle.length + actor.length) * 0.43;
       // Being airborne at first overlap clears the hazard for the whole pass.
       if (overlapX && overlapZ && !this.hit.has(actor.id) && this.clears(actor.kind)) this.cleared.add(actor.id);
-      const cleared = this.cleared.has(actor.id);
-      if (overlapX && overlapZ && !cleared) { this.contacted.add(actor.id); this.combo = 0; }
-      if (overlapX && overlapZ && !cleared && this.invulnerable <= 0 && !this.hit.has(actor.id)) {
+      const contact = overlapX && overlapZ && !this.cleared.has(actor.id);
+      if (contact) { this.contacted.add(actor.id); this.combo = 0; }
+      if (contact && this.invulnerable <= 0 && !this.hit.has(actor.id)) {
         this.hit.add(actor.id);
         this.health = Math.max(0, this.health - 1);
         const pothole = actor.kind === 'pothole';
