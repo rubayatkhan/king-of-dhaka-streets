@@ -325,6 +325,16 @@ describe('repeatable fair routes', () => {
     }
   });
 
+  it('rides faster through busier streets in each chapter\'s later missions', () => {
+    for (let vehicle = 0; vehicle < 5; vehicle++) {
+      const speeds = [0, 1, 2].map(lesson => { const sim = new Simulation(vehicle, 3, lesson); sim.start(); sim.traffic.length = 0; advance(sim, 7); return sim.speed; });
+      expect(speeds[1]).toBeGreaterThan(speeds[0]); expect(speeds[2]).toBeGreaterThan(speeds[1]);
+      expect(speeds[2]).toBeLessThanOrEqual(VEHICLES[vehicle].maxSpeed * 1.12 + 1e-9);
+      const perMetre = [0, 1, 2].map(lesson => { const sim = new Simulation(vehicle, 3, lesson); return sim.traffic.length / sim.routeLength; });
+      expect(perMetre[1]).toBeGreaterThan(perMetre[0]); expect(perMetre[2]).toBeGreaterThan(perMetre[1]);
+    }
+  });
+
   it('rejects invalid time steps without corrupting the state', () => {
     const sim = new Simulation(); sim.start(); const before = JSON.stringify(sim);
     sim.update(NaN, straight); sim.update(-1, straight); sim.update(0, straight);
