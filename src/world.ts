@@ -430,7 +430,7 @@ export class World {
  }
  private renderPickups(sim:Simulation,z:number){
   ([1,5] as const).forEach((value,i)=>{const mesh=this.coinMeshes[i];let n=0;
-   for(const coin of sim.coins){if(coin.value!==value||coin.collected||coin.gone||coin.z-z>25||coin.z-z<-110||n>=256)continue;
+   for(const coin of sim.coins){if(coin.value!==value||coin.collected||coin.z-z>25||coin.z-z<-110||n>=256)continue;
     // Coins rock to face the chase camera (so the ৳ stays readable) and a glint ripples down each trail.
     this.dummy.position.set(pathX(coin.z)+coin.x,coin.y+Math.sin(this.clock*3+coin.id*.7)*.07,coin.z);this.dummy.rotation.set(0,Math.sin(this.clock*2.2+coin.id*.45)*.85,0);this.dummy.updateMatrix();mesh.setMatrixAt(n++,this.dummy.matrix);}
    mesh.count=n;mesh.instanceMatrix.needsUpdate=true;});

@@ -23,7 +23,7 @@ export const JUMPS: Record<VehicleKind, JumpProfile> = {
   truck: { airtime: 0.3, height: 0.15, clears: ['pothole'] },
 };
 const JUMP_COOLDOWN = 0.35, AIR_STEERING = 0.6;
-const COIN_GUARD_AHEAD = 40, COIN_ROOM = 0.3;
+const COIN_SCAN_AHEAD = 40;
 export type Traffic = {
   id: number; kind: VehicleKind | 'bus' | 'cng' | 'pedestrian' | 'pothole' | 'paan' | 'cow';
   x: number; z: number; speed: number; width: number; length: number; passed: boolean; warn: boolean;
@@ -83,7 +83,7 @@ export class Simulation {
     this.createTraffic();
     const jump = JUMPS[VEHICLES[this.vehicleIndex].id];
     ({ coins: this.coins, snacks: this.snacks } = placePickups({ traffic: this.traffic, routeLength: this.routeLength, startSpeed: this.maxSpeed, ambushes: this.stageIndex,
-      riderHalfWidth: VEHICLES[this.vehicleIndex].width / 2, arcHeight: jump.height, arcClears: jump.clears.filter(kind => kind !== 'splash'), random: () => this.random() }));
+      riderHalfWidth: VEHICLES[this.vehicleIndex].width / 2, riderLength: VEHICLES[this.vehicleIndex].length, arcHeight: jump.height, arcClears: jump.clears.filter(kind => kind !== 'splash'), random: () => this.random() }));
   }
   neighborhoodAt(distance: number): Neighborhood {
     const zone = Math.floor(Math.max(0, Number.isFinite(distance) ? distance : 0) / 210);
@@ -101,32 +101,6 @@ export class Simulation {
   /** How far the jhalmuri magnet reaches: its pull radius, measured from the rider's collecting edge. */
   get magnetReach(): number { return this.powerUps.magnetRadius + VEHICLES[this.vehicleIndex].width / 2 + 0.45; }
 
-  // A warned bus or truck clears loose coins from its lane so they never lure a rider into it.
-  sweepCoins(x: number): void {
-    for (const coin of this.coins) if (!coin.collected && Math.abs(coin.x - x) < 2.6 && coin.z < this.z + 6 && coin.z > this.z - 120) coin.gone = true;
-  }
-
-  // Traffic drifts from where placement predicted (yielding, crossing walkers, a rider faster than planned),
-  // so every step a coin ahead that sits in an actor's way is withdrawn before it can lure the rider into contact.
-  // Rear threats sweep their own lane and paan-throwers stand off the road.
-  private coinBlockers(reachZ: number): Traffic[] {
-    const vehicle = VEHICLES[this.vehicleIndex];
-    return this.traffic.filter(t => {
-      if (t.behavior === 'rear-threat' || t.behavior === 'paan-thrower' || t.passed) return false;
-      const room = t.length / 2 + vehicle.length + COIN_ROOM;
-      return t.z < this.z + reachZ + 2 + room && t.z > this.z - COIN_GUARD_AHEAD - room;
-    });
-  }
-
-  // The actor's footprint grows by the rider's: half its width either side, and its whole length, because the
-  // rider collects a coin from up to half a length away and its nose reaches half a length further.
-  private coinBlockedBy(coin: Coin, t: Traffic): boolean {
-    const vehicle = VEHICLES[this.vehicleIndex];
-    // Arc coins hop over hazards this vehicle clears in the air.
-    if (coin.trail === 'arc' && (this.jumpProfile.clears as string[]).includes(t.kind)) return false;
-    return Math.abs(coin.x - t.x) < (t.width + vehicle.width) / 2 + COIN_ROOM && Math.abs(coin.z - t.z) < t.length / 2 + vehicle.length + COIN_ROOM;
-  }
-
   // Chaap's full belly soaks up one ordinary hit: no heart lost.
   private absorbHit(id: number, x: number, z: number): boolean {
     if (!this.effects.belly) return false;
@@ -139,11 +113,10 @@ export class Simulation {
     const vehicle = VEHICLES[this.vehicleIndex];
     if (tickEffects(this.effects, dt, this.rearThreats.length > 0)) this.events.push({ type: 'stomach', text: 'পেট গুড়গুড়! Tummy trouble — hold steady.', x: this.x, z: this.z, priority: 'urgent' });
     const reachX = vehicle.width / 2 + 0.45, reachZ = vehicle.length / 2 + 0.3;
-    const blockers = this.coinBlockers(reachZ);
     for (const coin of this.coins) {
-      if (coin.collected || coin.gone) continue;
+      if (coin.collected) continue;
       const ahead = this.z - coin.z;
-      if (ahead < -reachZ - 2 || ahead > COIN_GUARD_AHEAD) continue;
+      if (ahead < -reachZ - 2 || ahead > COIN_SCAN_AHEAD) continue;
       if (this.effects.magnet > 0 && coin.trail !== 'arc') {
         const gap = Math.hypot(coin.x - this.x, ahead);
         if (gap > 1e-6 && gap < this.magnetReach) {
@@ -151,7 +124,6 @@ export class Simulation {
           coin.x += (this.x - coin.x) * pull; coin.z += (this.z - coin.z) * pull; coin.y += (COIN_HEIGHT + this.y - coin.y) * pull;
         }
       }
-      if (blockers.some(t => this.coinBlockedBy(coin, t))) { coin.gone = true; continue; }
       if (Math.abs(coin.x - this.x) < reachX && Math.abs(this.z - coin.z) < reachZ && coin.y - COIN_HEIGHT <= this.y + 0.25 && (coin.trail !== 'arc' || this.airborne)) {
         coin.collected = true; this.taka += coin.value;
         this.coinChain = this.elapsed - this.lastCoinAt <= 0.6 ? this.coinChain + 1 : 1; this.lastCoinAt = this.elapsed;
@@ -463,7 +435,6 @@ export class Simulation {
     for (const threat of this.rearThreats) {
       const actor = this.traffic.find(t => t.id === threat.actorId);
       if (!actor) { done.add(threat.actorId); continue; }
-      this.sweepCoins(threat.x); // every step, so coins that scroll into range mid-encounter are cleared too
       if (threat.phase === 'warning') {
         threat.warningRemaining = Math.max(0, threat.warningRemaining - dt);
         threat.z = this.z + 36;

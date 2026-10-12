@@ -11,7 +11,6 @@ export interface Coin {
   value: 1 | 5;
   trail: 'safe' | 'bold' | 'arc';
   collected: boolean;
-  gone: boolean;
 }
 
 export interface Snack {
@@ -107,31 +106,32 @@ export function tickEffects(e: Effects, dt: number, rearThreat: boolean): boolea
 }
 
 // riderHalfWidth defaults to the bicycle's, the narrowest rider.
-export interface PlacementInput { traffic: Traffic[]; routeLength: number; startSpeed: number; arcHeight: number; arcClears: string[]; random: () => number; ambushes?: number; riderHalfWidth?: number }
+export interface PlacementInput { traffic: Traffic[]; routeLength: number; startSpeed: number; arcHeight: number; arcClears: string[]; random: () => number; ambushes?: number; riderHalfWidth?: number; riderLength?: number }
 export const COIN_SPACING = 1.2, MAX_SNACKS = 4, SNACK_GAP = 120;
 const SAFE_LANES = [-3.2, -1.6, 0, 1.6, 3.2], SNACK_LANES = [-2.4, 0, 2.4];
 const SNACKS: PowerUp[] = ['cha', 'jhalmuri', 'chaap'];
 
 // Checks where each actor will be when the rider reaches (x, z), widened for timing slack.
-// A rider centred on the coin must clear the actor's side by a margin (0.6 m in all for the bicycle).
-export function coinIsClear(traffic: Traffic[], x: number, z: number, startSpeed: number, riderHalfWidth = 0.34): boolean {
+// A rider centred on the coin must clear the actor's side by a margin (0.6 m in all for the bicycle), and its whole
+// length must clear the actor's ends, since it collects the coin from anywhere along its body.
+export function coinIsClear(traffic: Traffic[], x: number, z: number, startSpeed: number, riderHalfWidth = 0.34, riderLength = 1.8): boolean {
   return !traffic.some(t => {
     if (t.behavior === 'rear-threat') return false;
     if (t.kind === 'pedestrian') return Math.abs(t.z - z) < 3; // walkers cross the whole road
     const arrival = Math.abs(z) / Math.max(1, startSpeed), futureZ = t.z - t.speed * arrival, slack = t.speed > 0 ? 4 : 0;
-    return Math.abs(t.x - x) < t.width / 2 + riderHalfWidth + 0.26 && Math.abs(futureZ - z) < t.length / 2 + 0.6 + slack;
+    return Math.abs(t.x - x) < t.width / 2 + riderHalfWidth + 0.26 && Math.abs(futureZ - z) < t.length / 2 + riderLength + 0.6 + slack;
   });
 }
 
 export function placePickups(input: PlacementInput): { coins: Coin[]; snacks: Snack[] } {
-  const { traffic, routeLength, startSpeed, random, riderHalfWidth = 0.34 } = input;
+  const { traffic, routeLength, startSpeed, random, riderHalfWidth = 0.34, riderLength = 1.8 } = input;
   const coins: Coin[] = [], snacks: Snack[] = [];
   let id = 1, group = 1;
   const inRoute = (z: number) => -z > 40 && -z < routeLength - 30;
-  const clear = (x: number, z: number) => coinIsClear(traffic, x, z, startSpeed, riderHalfWidth);
+  const clear = (x: number, z: number) => coinIsClear(traffic, x, z, startSpeed, riderHalfWidth, riderLength);
   const free = (x: number, z: number) => !coins.some(c => Math.abs(c.x - x) < 1.2 && Math.abs(c.z - z) < 2);
   const lay = (x: number, zs: number[], value: 1 | 5, trail: Coin['trail'], y = (_: number) => COIN_HEIGHT) => {
-    zs.forEach((z, k) => coins.push({ id: id++, group, x, y: y(k), z, value, trail, collected: false, gone: false }));
+    zs.forEach((z, k) => coins.push({ id: id++, group, x, y: y(k), z, value, trail, collected: false }));
     group++;
   };
 

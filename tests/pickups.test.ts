@@ -88,6 +88,13 @@ function placed(vehicle: number, lesson: number, seed: number) {
 const groups = <T extends { group: number }>(items: T[]) => [...new Map(items.map(i => [i.group, items.filter(j => j.group === i.group)])).values()];
 
 describe('coin trails and snack placement', () => {
+  it('keeps a long rider\'s whole body off a parked hazard while it collects a coin', () => {
+    const cow = { id: 1, kind: 'cow' as const, x: 0, z: -100, speed: 0, width: 1.7, length: 2.4, passed: false, warn: false };
+    // 4 m past the cow's centre a bicycle collects cleanly, but a 6.2 m truck collecting there is still beside the cow.
+    expect(coinIsClear([cow], 0, -104, 20, 0.34, 1.8)).toBe(true);
+    expect(coinIsClear([cow], 0, -104, 20, 1.25, 6.2)).toBe(false);
+  });
+
   it('lays safe ৳1, bold ৳5 and arc trails of the right sizes', () => {
     for (let stage = 0; stage < 15; stage++) for (let seed = 1; seed <= 6; seed++) {
       const { coins } = placed(Math.floor(stage / 3), stage % 3, seed);
