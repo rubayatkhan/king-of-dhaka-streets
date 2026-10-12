@@ -648,6 +648,37 @@ describe('taka and street food', () => {
     expect(losses).toEqual([]);
   }, 120000);
 
+  it('withdraws a coin ahead that sits in an actor\'s way, but keeps arc coins over a hazard the vehicle hops', () => {
+    const sim = bare(); sim.speed = 10;
+    sim.traffic = [obstacle({ id: 1, kind: 'pothole', x: 0, z: -20, width: 1.65, length: 1.4 }), obstacle({ id: 2, kind: 'cng', x: 3, z: -30, width: 1.5, length: 2.5, speed: 3 })];
+    sim.coins = [coin({ id: 1, trail: 'arc', y: COIN_HEIGHT + 0.7, z: -20 }), coin({ id: 2, z: -20 }), coin({ id: 3, x: 3.2, z: -28 }), coin({ id: 4, x: -3, z: -28 }), coin({ id: 5, x: 3, z: -80 })];
+    sim.update(1 / 60, straight);
+    expect(sim.coins.map(c => c.gone)).toEqual([false, true, true, false, false]);
+  });
+
+  // Every step, any live coin within collecting reach must be safe to ride onto: a rider centred on the coin's line,
+  // at the rider's current distance, must not touch an actor (rear threats sweep their own lane; arc coins may sit over
+  // a hazard this vehicle clears in the air).
+  it('never offers a coin whose line would put the rider into traffic or a hazard', () => {
+    const bad: string[] = [];
+    for (let stage = 0; stage < 15; stage++) for (let seed = 1; seed <= 4; seed++) {
+      const sim = new Simulation(Math.floor(stage / 3), seed, stage % 3), vehicle = VEHICLES[sim.vehicleIndex];
+      const clears = JUMPS[vehicle.id].clears as string[], reachZ = vehicle.length / 2 + 0.3;
+      sim.start();
+      for (let frame = 0; frame < 180 * 60 && sim.status === 'playing'; frame++) {
+        pilot(sim, true);
+        for (const coin of sim.coins) {
+          if (coin.collected || coin.gone || Math.abs(sim.z - coin.z) >= reachZ) continue;
+          const actor = sim.traffic.find(t => t.behavior !== 'rear-threat' && t.behavior !== 'paan-thrower' && !t.passed && !(coin.trail === 'arc' && clears.includes(t.kind)) &&
+            Math.abs(coin.x - t.x) < (vehicle.width + t.width) * (t.kind === 'pothole' || t.kind === 'paan' ? 0.38 : 0.43) &&
+            Math.abs(sim.z - t.z) < (vehicle.length + t.length) * 0.43);
+          if (actor && !bad.some(b => b.endsWith(`#${seed}/${stage}/${coin.id}`))) bad.push(`${vehicle.id} ${coin.trail} coin into ${actor.kind} #${seed}/${stage}/${coin.id}`);
+        }
+      }
+    }
+    expect(bad).toEqual([]);
+  }, 120000);
+
   it('lets a coin-following pilot collect at least 90% of safe-trail coins', () => {
     let safe = 0, got = 0;
     for (let stage = 0; stage < 15; stage++) for (let seed = 1; seed <= 4; seed++) {
