@@ -357,6 +357,21 @@ export function roadHazard(kind:'pothole'|'paan',width:number,length:number,seed
  mergeStatic(g);mat.dispose();g.userData.ownedMaterials=[];return g;
 }
 
+export function coinParts(value:1|5){
+ const r=value===5?.3:.22,geometry=new T.CylinderGeometry(r,r,.06,20);geometry.rotateX(Math.PI/2);
+ const face=textured(canvasTexture(64,64,c=>{c.fillStyle=value===5?'#f2c14e':'#d9d2b8';c.fillRect(0,0,64,64);c.fillStyle='#7a5a12';c.font='bold 40px "Noto Sans Bengali",sans-serif';c.textAlign='center';c.textBaseline='middle';c.fillText('৳',32,34);}));
+ face.metalness=.5;face.roughness=.35;face.emissive=new T.Color(value===5?0x5a4000:0x3a3a30);
+ const rim=new T.MeshStandardMaterial({color:value===5?0xe0a92e:0xb9b39b,metalness:.6,roughness:.3});
+ return {geometry,materials:[rim,face,face] as T.Material[]};
+}
+export function snackModel(kind:'cha'|'jhalmuri'|'chaap'):Model{
+ const g=new T.Group() as Model;g.userData.kind=kind;
+ if(kind==='cha'){const glass=new T.Mesh(new T.CylinderGeometry(.13,.1,.26,14),new T.MeshStandardMaterial({color:0xc8741f,roughness:.25,transparent:true,opacity:.9}));glass.position.y=.13;g.add(glass);box(g,0,.015,0,.38,.03,.38,0xf3ead2);sphere(g,0,.3,0,.07,0xfff7e0,1,.4,1);}
+ else if(kind==='jhalmuri'){const cone=new T.Mesh(new T.ConeGeometry(.16,.42,14),material(0xe9dcb8));cone.rotation.x=Math.PI;cone.position.y=.21;g.add(cone);for(let i=0;i<7;i++)sphere(g,Math.cos(i)*.08,.44+(i%3)*.03,Math.sin(i)*.08,.045,i%2?0xd9a441:0x6e9a3d);}
+ else{const plate=new T.Mesh(new T.CylinderGeometry(.24,.2,.04,18),material(0xf2f0e6));g.add(plate);for(let i=0;i<4;i++)sphere(g,-.12+i*.08,.07,(i%2)*.05-.02,.07,0x8a4b23,1.2,.6,1);tube(g,[-.18,.14,0],[.2,.14,0],.012,0x8a6a3a);}
+ g.scale.setScalar(1.8);return g;
+}
+
 /** Dispose model-owned geometry while retaining shared primitive geometry and materials. */
 export function disposeModel(model:T.Object3D){
  model.removeFromParent();

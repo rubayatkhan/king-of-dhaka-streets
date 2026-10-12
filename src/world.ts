@@ -1,5 +1,5 @@
 import * as T from 'three';
-import {box,sphere,tube,material,canvasTexture,textured,mergeStatic,createVehicle,animateVehicle,pedestrian,type Model,disposeModel,seatedCow,roadHazard,animatePedestrian} from './models';
+import {box,sphere,tube,material,canvasTexture,textured,mergeStatic,createVehicle,coinParts,snackModel,type VehicleLook,animateVehicle,pedestrian,type Model,disposeModel,seatedCow,roadHazard,animatePedestrian} from './models';
 import {Simulation,VEHICLES} from './simulation';
 import {SHAKE_SECONDS,landingSquash,shakeOffset} from './feel';
 
@@ -35,6 +35,8 @@ export class World {
  private signs=Array<T.MeshStandardMaterial>(shops.length).fill(signAtlas());private walls:T.MeshStandardMaterial[];
  private scenery:T.Group;private quality='auto';private scale=1;private frameAvg=16;private frames=0;
  private dust:T.Points;private reduced=false;private shakeRemaining=0;private shakeAmplitude=0;private sinceLanding=Infinity;
+ private coinMeshes:T.InstancedMesh[]=[];private snackModels=new Map<number,Model>();private dummy=new T.Object3D();private magnetRing!:T.Mesh;
+ private look:VehicleLook={};private lookKey='{}';private builtLookKey='';
  constructor(canvas:HTMLCanvasElement){
   this.renderer=new T.WebGLRenderer({canvas,antialias:true,powerPreference:'high-performance'});
   this.renderer.outputColorSpace=T.SRGBColorSpace;this.renderer.toneMapping=T.ACESFilmicToneMapping;this.renderer.toneMappingExposure=1.10;
@@ -45,6 +47,8 @@ export class World {
   this.riverMaterial.roughness=.46;
   this.scenery=new T.Group();this.scene.add(this.scenery);
   this.makeRoad();
+  this.coinMeshes=([1,5] as const).map(v=>{const p=coinParts(v);const m=new T.InstancedMesh(p.geometry,p.materials,256);m.count=0;m.frustumCulled=false;m.castShadow=true;this.scene.add(m);return m;});
+  this.magnetRing=new T.Mesh(new T.TorusGeometry(1.4,.04,6,40),new T.MeshBasicMaterial({color:0xf2c14e,transparent:true,opacity:.55}));this.magnetRing.rotation.x=Math.PI/2;this.magnetRing.visible=false;this.scene.add(this.magnetRing);
   for(let i=0;i<7;i++){const chunk=this.makeChunk(i,'bazaar');chunk.position.z=-i*48;this.chunks.push(chunk);this.scenery.add(chunk);}
   this.makePalace();this.scene.add(this.palace);
   this.player=createVehicle('bicycle');this.scene.add(this.player);
@@ -363,14 +367,17 @@ export class World {
  setReduced(v:boolean){this.reduced=v;}
  shake(amplitude:number){this.shakeRemaining=SHAKE_SECONDS;this.shakeAmplitude=amplitude;}
  land(){this.sinceLanding=0;}
+ setLook(look:VehicleLook){this.look=look;this.lookKey=JSON.stringify(look);}
  resize(){const w=innerWidth,h=innerHeight;this.camera.aspect=w/h;this.camera.updateProjectionMatrix();const cap=this.quality==='high'?1.65:this.quality==='low'?.85:1.25;this.renderer.setPixelRatio(Math.min(devicePixelRatio,cap)*this.scale);this.renderer.setSize(w,h,false);}
  render(sim:Simulation,dt:number,steer:number,preview=false){
   const moving=sim.status==='playing'; if(moving||preview)this.clock+=dt; const z=preview?-12:sim.z;
-  if(this.currentSimulation!==sim){for(const actor of this.actors.values())disposeModel(actor);this.actors.clear();for(const effect of this.projectiles.values())disposeModel(effect);this.projectiles.clear();this.currentSimulation=sim;let palaceDistance=sim.routeLength*.5;for(let d=0;d<sim.routeLength;d+=24)if(sim.neighborhoodAt(d)==='riverfront'){palaceDistance=d+95;break;}this.palace.position.set(pathX(-palaceDistance)+28,0,-palaceDistance);this.camera.position.set(pathX(sim.z)+sim.x*.43,sim.vehicleIndex>=3?4.8:3.2,sim.z+(sim.vehicleIndex>=3?8.5:5.8));}
-  if(this.lastVehicle!==sim.vehicleIndex){disposeModel(this.player);this.player=createVehicle(VEHICLES[sim.vehicleIndex].id,VEHICLES[sim.vehicleIndex].color);this.scene.add(this.player);this.lastVehicle=sim.vehicleIndex;}
+  if(this.currentSimulation!==sim){for(const actor of this.actors.values())disposeModel(actor);this.actors.clear();for(const effect of this.projectiles.values())disposeModel(effect);this.projectiles.clear();for(const m of this.snackModels.values())disposeModel(m);this.snackModels.clear();this.currentSimulation=sim;let palaceDistance=sim.routeLength*.5;for(let d=0;d<sim.routeLength;d+=24)if(sim.neighborhoodAt(d)==='riverfront'){palaceDistance=d+95;break;}this.palace.position.set(pathX(-palaceDistance)+28,0,-palaceDistance);this.camera.position.set(pathX(sim.z)+sim.x*.43,sim.vehicleIndex>=3?4.8:3.2,sim.z+(sim.vehicleIndex>=3?8.5:5.8));}
+  if(this.lastVehicle!==sim.vehicleIndex||this.builtLookKey!==this.lookKey){disposeModel(this.player);this.player=createVehicle(VEHICLES[sim.vehicleIndex].id,VEHICLES[sim.vehicleIndex].color,this.look);this.scene.add(this.player);this.lastVehicle=sim.vehicleIndex;this.builtLookKey=this.lookKey;}
   this.player.position.set(pathX(z)+sim.x,.025+sim.y,z);this.player.rotation.y=-steer*.17-Math.atan((pathX(z-.2)-pathX(z))/.2);
   animateVehicle(this.player,this.clock,preview?2:sim.speed,steer);
   this.sinceLanding+=dt;this.player.scale.y=landingSquash(this.sinceLanding);
+  this.player.rotation.z=sim.effects.stomach>0&&!this.reduced?Math.sin(this.clock*14)*.08:0;
+  this.magnetRing.visible=sim.effects.magnet>0;this.magnetRing.position.set(pathX(z)+sim.x,.08+sim.y,z);
   if(sim.invulnerable>0)this.player.visible=Math.floor(this.clock*9)%3!==0;else this.player.visible=true;
   for(let i=0;i<this.chunks.length;i++){
    let c=this.chunks[i];let chunkZ=c.position.z;
@@ -409,17 +416,28 @@ export class World {
 
   }
   for(const [id,m] of this.actors)if(!keep.has(id)){disposeModel(m);this.actors.delete(id);}
-  this.renderProjectiles(sim);
+  this.renderProjectiles(sim);this.renderPickups(sim,z);
   const large=sim.vehicleIndex>=3;const camX=pathX(z)+sim.x*.43;const target=new T.Vector3(camX,large?4.8:3.2,z+(large?8.5:5.8));
   if(preview)target.set(pathX(z)+5,4.5,z+7);
   this.camera.position.lerp(target,1-Math.exp(-dt*7));const cameraBase=this.camera.position.clone();
   this.shakeRemaining=Math.max(0,this.shakeRemaining-dt);const shake=shakeOffset(this.shakeRemaining,this.shakeAmplitude,this.clock,this.reduced);
   this.camera.position.x+=shake.x;this.camera.position.y+=shake.y;this.camera.lookAt(pathX(z-7)+sim.x*.3,large?1.4:1.0,z-9);
-  this.camera.fov=(innerHeight>innerWidth?70:58)+(this.reduced?0:Math.min(sim.speed,22)*.2);this.camera.updateProjectionMatrix();
+  this.camera.fov=(innerHeight>innerWidth?70:58)+(this.reduced?0:Math.min(sim.speed,22)*.2+(sim.effects.boost>0?6:0));this.camera.updateProjectionMatrix();
   this.sun.position.set(pathX(z)-24,36,z+18);this.sun.target.position.set(pathX(z),0,z-12);
   this.dust.position.set(pathX(z),0,z);this.dust.rotation.y=this.clock*.007;
   this.renderer.render(this.scene,this.camera);this.camera.position.copy(cameraBase);
   if(this.quality==='auto'&&dt>0){this.frameAvg=this.frameAvg*.97+dt*1000*.03;if(++this.frames%180===0&&this.frameAvg>24&&this.scale>.7){this.scale=Math.max(.7,this.scale-.1);this.resize();}}
+ }
+ private renderPickups(sim:Simulation,z:number){
+  ([1,5] as const).forEach((value,i)=>{const mesh=this.coinMeshes[i];let n=0;
+   for(const coin of sim.coins){if(coin.value!==value||coin.collected||coin.gone||coin.z-z>25||coin.z-z<-110||n>=256)continue;
+    this.dummy.position.set(pathX(coin.z)+coin.x,coin.y,coin.z);this.dummy.rotation.set(0,this.clock*3+coin.id*.4,0);this.dummy.updateMatrix();mesh.setMatrixAt(n++,this.dummy.matrix);}
+   mesh.count=n;mesh.instanceMatrix.needsUpdate=true;});
+  const keep=new Set<number>();
+  for(const snack of sim.snacks){if(snack.eaten||snack.z-z>25||snack.z-z<-110)continue;keep.add(snack.id);let model=this.snackModels.get(snack.id);
+   if(!model){model=snackModel(snack.kind);this.snackModels.set(snack.id,model);this.scene.add(model);}
+   model.position.set(pathX(snack.z)+snack.x,.75+Math.sin(this.clock*2.4+snack.id)*.12,snack.z);model.rotation.y=this.clock*1.6;}
+  for(const [id,m] of this.snackModels)if(!keep.has(id)){disposeModel(m);this.snackModels.delete(id);}
  }
  private renderProjectiles(sim:Simulation){
   const keep=new Set<number>();

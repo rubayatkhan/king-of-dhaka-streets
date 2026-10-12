@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { BufferGeometry, Color, Mesh, type Object3D } from 'three';
-import { createVehicle } from '../src/models';
+import { createVehicle, snackModel } from '../src/models';
 
 function hasColor(model: Object3D, hex: number): boolean {
   const c = new Color(hex); let found = false;
@@ -29,5 +29,13 @@ describe('Bazaar looks', () => {
     expect(hasColor(createVehicle('motorbike', 0xd84c3d, { extra: 'red-helmet' }), 0xc8322b)).toBe(true);
     expect(hasColor(createVehicle('motorbike', 0xd84c3d), 0xc8322b)).toBe(false);
     expect(hasColor(createVehicle('car', 0xf2dbad, { paint: 0xf2c12e }), 0xf2c12e)).toBe(true);
+  });
+});
+
+describe('street food models', () => {
+  it('builds a distinct floating model for each snack', () => {
+    const models = (['cha', 'jhalmuri', 'chaap'] as const).map(kind => snackModel(kind));
+    for (const [i, kind] of (['cha', 'jhalmuri', 'chaap'] as const).entries()) { expect(models[i].userData.kind).toBe(kind); expect(models[i].children.length).toBeGreaterThan(1); }
+    expect(new Set(models.map(m => vertices(m))).size).toBe(3);
   });
 });
