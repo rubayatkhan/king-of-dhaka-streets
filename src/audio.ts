@@ -1,5 +1,6 @@
 /** CC0 street ambience, original effects, and street calls: the family's recording, else a bundled AI voice, else a caption. */
-import { JUMP_SOUND, SOUNDS, coinRecipe, transpose, type Note, type Recipe, type ToneNote } from './soundbank';
+import { DEFAULT_HORN, HORNS, JUMP_SOUND, SOUNDS, coinRecipe, transpose, type HornId, type Note, type Recipe, type ToneNote } from './soundbank';
+import type { VehicleKind } from './simulation';
 import { lineById, linesFor, sanitizeManifest, voiceSource, voiceUrl, type District, type VoiceLine, type VoiceManifest } from './voices';
 export interface StreetAudioContext {
   neighborhood: string;
@@ -246,16 +247,15 @@ export class GameAudio {
     this.play(transpose(SOUNDS['near-miss'], bound(combo, 0, 12) / 2));
   }
 
-  horn(vehicle: string): void {
+  horn(vehicle: string, horn?: HornId): void {
     if (!this.ready() || this.context!.currentTime - this.lastHorn < 0.32) return;
     this.lastHorn = this.context!.currentTime;
-    if (/bicycle|rickshaw|cycle/i.test(vehicle)) {
-      this.play(SOUNDS['bike-bell']);
-    } else if (/truck/i.test(vehicle)) {
-      this.play([tn(116.5, 0.7, 0.16, 'sawtooth'), tn(155.6, 0.65, 0.10, 'triangle'), tn(233, 0.5, 0.04)]);
-    } else {
-      this.play([tn(349, 0.3, 0.11, 'triangle'), tn(440, 0.35, 0.08, 'triangle')]);
-    }
+    this.play(HORNS[horn ?? DEFAULT_HORN[vehicle as VehicleKind] ?? 'car-horn']);
+  }
+
+  /** Plays a bell or horn in the Bazaar, outside a ride. */
+  preview(horn: HornId): void {
+    if (this.context && !this.muted && this.context.state === 'running') this.play(HORNS[horn]);
   }
 
   impact(): void {

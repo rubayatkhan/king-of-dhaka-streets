@@ -5,7 +5,7 @@ import { GameAudio } from './audio';
 import { STAGES, type Neighborhood } from './campaign';
 import { loadProgress, completeStage, availableStage } from './progress';
 import { STOMACH_SECONDS } from './pickups';
-import { bankRide, buyLook, buyUpgrade, describePurchases, powerUpStats, ridePayout, toggleLook, vehicleLook } from './economy';
+import { bankRide, buyLook, buyUpgrade, describePurchases, equippedHorn, LOOKS, powerUpStats, ridePayout, toggleLook, vehicleLook } from './economy';
 import { isRepeatTap, renderShop, type ShopTab, type Tap } from './shop';
 import { sendFeedback, type FeedbackKind } from './feedback';
 import { freshSeed } from './seed';
@@ -129,6 +129,7 @@ function drawShop(note=''){$('#shop-wallet').innerHTML=`<i class="coin" aria-hid
 const closeShop=()=>{$('#shop').classList.add('hidden');$('#menu').inert=false;$('#shop-open').focus();};
 $('#shop-open').onclick=()=>{drawShop();$('#shop').classList.remove('hidden');$('#menu').inert=true;$('#shop-close').focus();};$('#shop-close').onclick=closeShop;
 $('#shop').addEventListener('click',e=>{const b=(e.target as HTMLElement).closest<HTMLButtonElement>('button');if(!b||b.id==='shop-close')return;let note='';
+ if(b.dataset.hear){const item=LOOKS.find(i=>i.id===b.dataset.hear);if(item?.horn)void audio.init().then(()=>audio.preview(item.horn!));return;}
  // A double tap must not buy twice or undo the purchase; the row redraws, so put focus back on its button.
  const row=b.dataset.look?`[data-look="${b.dataset.look}"]`:b.dataset.upgrade?`[data-upgrade="${b.dataset.upgrade}"]`:'',now=performance.now();if(row&&isRepeatTap(lastTap,row,now))return;if(row)lastTap={key:row,at:now};
  if(b.dataset.tab)shopTab=b.dataset.tab==='power-ups'?'power-ups':'looks';
@@ -211,7 +212,7 @@ function frame(now:number){const dt=Math.min((now-last)/1000,.05);last=now;
  const events=sim.events.splice(0);
  for(const event of events){
   if(event.type==='jump')audio.jump(VEHICLES[selected].id);if(event.type==='land')world?.land();if(event.type==='bump'){world?.shake(.35);world?.land();audio.bump();audio.say('pothole-uff');}
-  if(event.type==='horn'){hornUntil=now+250;$('#horn').classList.add('ringing');audio.horn(VEHICLES[selected].id);if(!rear)showToast(event.text);}
+  if(event.type==='horn'){hornUntil=now+250;$('#horn').classList.add('ringing');audio.horn(VEHICLES[selected].id,equippedHorn(save,VEHICLES[selected].id));if(!rear)showToast(event.text);}
   if(event.type==='warning'){showToast(event.text);if(event.text.includes('Ostad'))audio.say('bus-helper-plastic');if(/cow|goru/i.test(event.text))audio.warning('cow',(event.x??0)/5.3);}
   // The rear alert card itself carries these, so no toast stacks under it onto the rider on a short landscape screen.
   if(event.type==='rear-warning')audio.warning('rear',(event.x??0)/5.3);if(event.type==='rear-swerve'){audio.warning('rear',(event.x??0)/5.3);swerveUntil=now+2500;}

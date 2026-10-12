@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buyLook, buyUpgrade } from '../src/economy';
+import { LOOKS, buyLook, buyUpgrade } from '../src/economy';
 import { loadProgress } from '../src/progress';
 import { REPEAT_TAP_MS, actionAria, actionLabel, isRepeatTap, lookRows, powerUpRows, renderShop, type ShopRow } from '../src/shop';
 const wallet = (taka: number) => { const p = loadProgress(null, null); p.taka = taka; return p; };
@@ -8,10 +8,16 @@ describe('the Bazaar view', () => {
   it('lists the vehicle\'s looks plus every outfit, each with the right action', () => {
     const p = wallet(1000); buyLook(p, 'bicycle-basket'); buyLook(p, 'bicycle-streamers'); p.taka = 160;
     const rows = lookRows(p, 'bicycle', true);
-    expect(rows.map(r => r.id)).toEqual(['bicycle-paint-mango', 'bicycle-paint-jamun', 'bicycle-streamers', 'bicycle-basket', 'outfit-lungi', 'outfit-panjabi', 'outfit-school', 'outfit-cricket']);
+    expect(rows.map(r => r.id)).toEqual(['bicycle-paint-mango', 'bicycle-paint-jamun', 'bicycle-streamers', 'bicycle-basket', 'outfit-lungi', 'outfit-panjabi', 'outfit-school', 'outfit-cricket', 'bike-bell-brass']);
     const state = (id: string) => rows.find(r => r.id === id)!.state;
     expect(state('bicycle-streamers')).toBe('equipped'); expect(state('bicycle-basket')).toBe('equip');
     expect(state('bicycle-paint-mango')).toBe('buy'); expect(state('outfit-school')).toBe('too-poor');
+  });
+  it('lets a player hear a bell or horn before buying it', () => {
+    const html = renderShop(loadProgress(null, null), 'truck', 'looks', true);
+    expect(html).toContain('data-hear="truck-horn-melody"');
+    expect(html).toMatch(/aria-label="Hear Melody pressure horn"/);
+    expect(html.match(/data-hear=/g)?.length).toBe(LOOKS.filter(i => i.vehicle === 'truck' && i.slot === 'sound').length);
   });
   it('shows each power-up level, its next step and when it is maxed', () => {
     const p = wallet(10000); for (let i = 0; i < 4; i++) buyUpgrade(p, 'chaap'); p.taka = 300;

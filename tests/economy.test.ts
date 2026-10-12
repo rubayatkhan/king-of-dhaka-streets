@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { LOOKS, MAX_LEVEL, UPGRADE_PRICES, bankRide, buyLook, buyUpgrade, describePurchases, powerUpStats, ridePayout, settleRide, toggleLook, vehicleLook } from '../src/economy';
+import { LOOKS, MAX_LEVEL, UPGRADE_PRICES, bankRide, buyLook, buyUpgrade, describePurchases, equippedHorn, powerUpStats, ridePayout, settleRide, toggleLook, vehicleLook } from '../src/economy';
 import { loadProgress } from '../src/progress';
 import { VEHICLES } from '../src/simulation';
+import { DEFAULT_HORN, HORNS } from '../src/soundbank';
 const wallet = (taka: number) => { const p = loadProgress(null, null); p.taka = taka; return p; };
 
 describe('the Bazaar economy', () => {
@@ -10,6 +11,20 @@ describe('the Bazaar economy', () => {
     for (const v of VEHICLES) expect(LOOKS.some(i => i.vehicle === v.id), v.id).toBe(true);
     expect(LOOKS.filter(i => i.slot === 'outfit' && i.vehicle === 'rider')).toHaveLength(4);
     for (const i of LOOKS) { expect(i.price).toBeGreaterThanOrEqual(150); expect(i.price).toBeLessThanOrEqual(800); }
+  });
+  it('sells a bell or horn for every vehicle and plays the equipped one', () => {
+    const p = loadProgress(null, null);
+    for (const v of ['bicycle', 'rickshaw', 'motorbike', 'car', 'truck'] as const) {
+      const items = LOOKS.filter(i => i.vehicle === v && i.slot === 'sound');
+      expect(items.length, v).toBeGreaterThan(0);
+      for (const i of items) expect(HORNS[i.horn!], i.id).toBeDefined();
+      expect(equippedHorn(p, v)).toBe(DEFAULT_HORN[v]);
+    }
+    p.taka = 5000;
+    expect(buyLook(p, 'truck-horn-melody')).toBe('bought');
+    expect(equippedHorn(p, 'truck')).toBe('truck-horn-melody');
+    p.owned = p.owned.filter(id => id !== 'truck-horn-melody');
+    expect(equippedHorn(p, 'truck')).toBe(DEFAULT_HORN.truck); // equipped but not owned is ignored
   });
   it('buys a look once, equips it, and refuses when the wallet is short', () => {
     const p = wallet(150);

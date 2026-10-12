@@ -53,3 +53,21 @@ export function coinRecipe(value: 1 | 5, chain: number): Recipe {
 }
 
 export const JUMP_SOUND: Record<VehicleKind, SoundId> = { bicycle: 'jump-bicycle', rickshaw: 'jump-rickshaw', motorbike: 'jump-motorbike', car: 'jump-car', truck: 'jump-truck' };
+
+const s = 'sawtooth' as const;
+// Each vehicle's own bell or horn; the Bazaar sells a second voice for every ride (original melodies).
+export const HORNS = {
+  'bike-bell': SOUNDS['bike-bell'],
+  'bike-bell-brass': [t(1975.5, .45, .14), t(2960, .3, .05), t(1975.5, .45, .12, 'sine', .11), t(2960, .3, .045, 'sine', .11), t(1975.5, .5, .1, 'sine', .22)],
+  'rickshaw-bell': SOUNDS['rickshaw-tring'],
+  'rickshaw-bell-double': [t(1396.9, .16, .08), t(2093, .12, .03), t(1396.9, .16, .08, 'sine', .13), t(1568, .16, .08, 'sine', .26), t(2349, .12, .03, 'sine', .26), t(1568, .2, .08, 'sine', .39)],
+  'motorbike-beep': [t(523.3, .16, .1, 'square', 0, undefined, { lowpass: 2200 }), t(523.3, .16, .1, 'square', .2, undefined, { lowpass: 2200 })],
+  'motorbike-horn-musical': [t(659.3, .14, .09, 'square', 0, undefined, { lowpass: 2400 }), t(784, .14, .09, 'square', .15, undefined, { lowpass: 2400 }), t(987.8, .22, .09, 'square', .3, undefined, { lowpass: 2400 })],
+  'car-horn': [t(349.2, .3, .11, 'triangle'), t(440, .35, .08, 'triangle')],
+  'car-horn-taxi': [t(415.3, .1, .1, s, 0, undefined, { lowpass: 1600 }), t(523.3, .1, .08, s, 0, undefined, { lowpass: 1600 }), t(415.3, .1, .1, s, .14, undefined, { lowpass: 1600 }), t(523.3, .1, .08, s, .14, undefined, { lowpass: 1600 })],
+  'truck-horn': [t(116.5, .7, .16, s), t(155.6, .65, .1, 'triangle'), t(233.1, .5, .04)],
+  'truck-horn-melody': [392, 440, 493.9, 587.3, 493.9, 440, 392].map((f, i) => t(f, i === 6 ? .4 : .17, .09, s, i * .18, undefined, { lowpass: 2000 })),
+  'truck-horn-ship': [t(87.3, 1.2, .16, s, 0, undefined, { lowpass: 700 }), t(130.8, 1.1, .1, 'triangle'), t(174.6, .9, .05, 'sine', .05)],
+} satisfies Record<string, Recipe>;
+export type HornId = keyof typeof HORNS;
+export const DEFAULT_HORN: Record<VehicleKind, HornId> = { bicycle: 'bike-bell', rickshaw: 'rickshaw-bell', motorbike: 'motorbike-beep', car: 'car-horn', truck: 'truck-horn' };
