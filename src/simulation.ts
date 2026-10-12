@@ -24,6 +24,8 @@ export const JUMPS: Record<VehicleKind, JumpProfile> = {
 };
 const JUMP_COOLDOWN = 0.35, AIR_STEERING = 0.6;
 const COIN_SCAN_AHEAD = 40;
+// A warned bus or truck starts 36 m behind and closes at least this fast, so no pace (not even cha) outruns it.
+const REAR_START = 36, REAR_CLOSING = 12, REAR_WARNING = 3;
 export type Traffic = {
   id: number; kind: VehicleKind | 'bus' | 'cng' | 'pedestrian' | 'pothole' | 'paan' | 'cow';
   x: number; z: number; speed: number; width: number; length: number; passed: boolean; warn: boolean;
@@ -71,7 +73,6 @@ export class Simulation {
   private paanEncounters = 0;
   private nextReactiveTime = 0;
   private chainUntil = 0;
-  private rearDelays = new Map<number, number>();
 
   constructor(index = 0, seed = 1, stageIndex = 0, powerUps: PowerUpStats = BASE_POWER_UPS) {
     this.vehicleIndex = Number.isFinite(index) ? clamp(Math.floor(index), 0, VEHICLES.length - 1) : 0;
@@ -416,18 +417,34 @@ export class Simulation {
     });
   }
 
+  private inRearLane(threat: RearThreat, margin: number): boolean {
+    return Math.abs(this.x - threat.x) < (VEHICLES[this.vehicleIndex].width + (threat.kind === 'bus' ? 2.4 : 2.5)) / 2 + margin;
+  }
+
+  // The lane well clear of the rider that cuts through the least traffic, preferring the farther one.
+  private swerveLane(threat: RearThreat): number {
+    const threatWidth = threat.kind === 'bus' ? 2.4 : 2.5, edge = ROAD_HALF_WIDTH - threatWidth / 2 - 0.1;
+    const lanes = Array.from({ length: Math.floor(edge * 8) + 1 }, (_, k) => -edge + k * 0.25).filter(x => x <= edge && !this.inRearLane({ ...threat, x }, 0.6));
+    const crowd = (x: number) => this.traffic.filter(t => t.behavior !== 'rear-threat' && t.behavior !== 'paan-thrower' && !t.passed &&
+      Math.abs(t.z - this.z) < 40 && Math.abs(t.x - x) < (t.width + threatWidth) / 2).length;
+    const far = this.x > 0 ? -edge : edge;
+    return lanes.reduce((best, x) => crowd(x) < crowd(best) || (crowd(x) === crowd(best) && Math.abs(x - this.x) > Math.abs(best - this.x)) ? x : best, lanes[0] ?? far);
+  }
+
   private updateRearThreats(dt: number): void {
     const vehicle = VEHICLES[this.vehicleIndex];
     const encounterCount = this.stageIndex === 0 ? 0 : this.stageIndex === 1 ? 1 : 2;
-    if (this.elapsed >= this.nextReactiveTime && this.rearEncounters < encounterCount && this.distance >= 180 + this.rearEncounters * 280 && this.remaining > 140 && this.rearThreats.length === 0 && this.projectiles.length === 0) {
+    // Only announce one with road left for the warning, its approach and a second to pass, even at cha pace.
+    const runway = (REAR_WARNING + REAR_START / REAR_CLOSING + 1) * Math.min(SPEED_CAP, Math.max(this.speed, this.maxSpeed) * CHA_SPEED);
+    if (this.elapsed >= this.nextReactiveTime && this.rearEncounters < encounterCount && this.distance >= 180 + this.rearEncounters * 280 && this.remaining > runway && this.rearThreats.length === 0 && this.projectiles.length === 0) {
       const kind = this.vehicleIndex < 2 ? 'bus' : 'truck';
-      const actorId = this.encounterId, x = clamp(this.x, -2, 2), z = this.z + 36;
-      const candidate: RearThreat = { actorId, kind, x, z, warningRemaining: 3 + dt, timeToContact: 7, urgency: 0, phase: 'warning' };
+      const actorId = this.encounterId, x = clamp(this.x, -2, 2), z = this.z + REAR_START;
+      const candidate: RearThreat = { actorId, kind, x, z, warningRemaining: REAR_WARNING + dt, timeToContact: 7, urgency: 0, phase: 'warning' };
       if (this.escapeExists(candidate)) {
       this.rearEncounters++; this.encounterId++;
       this.rearThreats.push(candidate);
       this.traffic.push({ id: actorId, kind, x, z, speed: this.maxSpeed + 9, width: kind === 'bus' ? 2.4 : 2.5, length: 6.5,
-        passed: false, warn: true, behavior: 'rear-threat', phase: 'warning', warningRemaining: 3 });
+        passed: false, warn: true, behavior: 'rear-threat', phase: 'warning', warningRemaining: REAR_WARNING });
       this.events.push({ type: 'rear-warning', text: kind === 'bus' ? 'Bus behind! Move out of the marked lane.' : 'Truck behind! Clear its lane.', x, z, actorId, priority: 'urgent' });
       }
     }
@@ -437,19 +454,17 @@ export class Simulation {
       if (!actor) { done.add(threat.actorId); continue; }
       if (threat.phase === 'warning') {
         threat.warningRemaining = Math.max(0, threat.warningRemaining - dt);
-        threat.z = this.z + 36;
+        threat.z = this.z + REAR_START;
         if (threat.warningRemaining <= 1e-8) {
-          if (this.escapeExists(threat)) { threat.phase = 'passing'; actor.phase = 'active'; }
-          else {
-            const delay = (this.rearDelays.get(threat.actorId) ?? 0) + 0.25;
-            this.rearDelays.set(threat.actorId, delay);
-            if (delay >= 1.25) {
-              done.add(threat.actorId); actor.behavior = undefined; actor.phase = 'passed'; actor.passed = true; actor.speed = 1;
-              this.events.push({ type: 'warning', text: 'Heavy traffic has slowed behind you. Keep moving.', x: threat.x, z: threat.z, actorId: actor.id });
-            } else threat.warningRemaining = 0.25;
+          threat.phase = 'passing'; actor.phase = 'active';
+          // A rider boxed into the marked lane by traffic is never punished for a gap that does not exist.
+          if (this.inRearLane(threat, 0.4) && !this.escapeExists(threat)) {
+            threat.x = this.swerveLane(threat);
+            this.events.push({ type: 'rear-swerve', text: `The ${threat.kind} swerves around you!`, x: threat.x, z: threat.z, actorId: actor.id, priority: 'urgent' });
           }
         }
       } else {
+        actor.speed = Math.max(actor.speed, this.speed + REAR_CLOSING);
         threat.z -= actor.speed * dt;
         const overlap = Math.abs(this.x - threat.x) < (vehicle.width + actor.width) * 0.43 && Math.abs(this.z - threat.z) < (vehicle.length + actor.length) * 0.43;
         if (overlap) {

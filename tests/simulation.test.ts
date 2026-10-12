@@ -151,6 +151,37 @@ describe('handling and hazards', () => {
     expect(sim.health).toBe(3); expect(sim.status).toBe('playing'); expect(sim.rearThreats).toHaveLength(0);
   });
 
+  const warnedTruck = (sim: Simulation, x: number) => {
+    sim.rearThreats = [{ actorId: 7, kind: 'truck', x, z: sim.z + 36, urgency: 0, timeToContact: 7, warningRemaining: 0.5, phase: 'warning' }];
+    sim.traffic.push(obstacle({ id: 7, kind: 'truck', x, z: sim.z + 36, width: 2.5, length: 6.5, speed: 25, behavior: 'rear-threat', phase: 'warning', warn: true }));
+  };
+  const passedRearThreat = (sim: Simulation) => sim.traffic.some(t => t.id === 7 && t.passed);
+
+  it('brings a warned truck past even a rider racing on cha', () => {
+    const sim = new Simulation(2, 1, 2); sim.start(); sim.traffic = []; sim.coins = []; sim.snacks = [];
+    sim.distance = 200; sim.z = -200; sim.x = 3.5; sim.speed = 30; warnedTruck(sim, -1);
+    for (let f = 0; f < 6 * 60 && !passedRearThreat(sim); f++) { sim.effects.boost = 5; sim.update(1 / 60, straight); }
+    expect(passedRearThreat(sim)).toBe(true); expect(sim.status).toBe('playing');
+  });
+
+  it('swerves a warned truck around a boxed-in rider instead of calling it off', () => {
+    const sim = new Simulation(0, 1, 1); sim.start(); sim.traffic = []; sim.coins = []; sim.snacks = [];
+    sim.distance = 200; sim.z = -200; sim.speed = 3; warnedTruck(sim, 0);
+    sim.traffic.push(...[-4.4, -2.5, 2.5, 4.4].map((x, k) => obstacle({ id: 20 + k, kind: 'car', x, z: sim.z - 4, width: 1.8, length: 3.5, speed: 3 })));
+    const events: string[] = [];
+    for (let f = 0; f < 8 * 60 && !passedRearThreat(sim); f++) { sim.update(1 / 60, straight); events.push(...sim.events.map(e => e.text)); }
+    expect(events.some(t => /slowed behind/.test(t))).toBe(false);
+    expect(events.some(t => /swerves/i.test(t))).toBe(true);
+    expect(passedRearThreat(sim)).toBe(true); expect(sim.health).toBe(3); expect(sim.status).toBe('playing');
+  });
+
+  it('only warns of a rear truck when there is road left for it to arrive', () => {
+    const sim = new Simulation(4, 1, 2); sim.start(); sim.traffic = []; sim.speed = 27;
+    sim.distance = sim.routeLength - 150; sim.z = -sim.distance; sim.remaining = 150;
+    sim.update(1 / 60, straight);
+    expect(sim.rearThreats).toHaveLength(0);
+  });
+
   it('awards a near-miss chain only for close clean passes and breaks it even on immune contact', () => {
     const sim = new Simulation(); sim.start(); sim.traffic = [obstacle({ x: 1.25, z: -1 })]; advance(sim, 2);
     expect(sim.nearMisses).toBe(1); expect(sim.combo).toBe(1); expect(sim.maxCombo).toBe(1);

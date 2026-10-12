@@ -192,7 +192,7 @@ function frame(now:number){const dt=Math.min((now-last)/1000,.05);last=now;
   if(event.type==='jump')audio.jump(VEHICLES[selected].id);if(event.type==='land')world?.land();if(event.type==='bump'){world?.shake(.35);world?.land();audio.bump();}
   if(event.type==='horn'){hornUntil=now+250;$('#horn').classList.add('ringing');audio.horn(VEHICLES[selected].id);if(!rear)showToast(event.text);}
   if(event.type==='warning'){showToast(event.text);if(event.text.includes('Ostad'))audio.say('ওস্তাদ, বামে প্লাস্টিক!');if(/cow|goru/i.test(event.text))audio.warning('cow',(event.x??0)/5.3);}
-  if(event.type==='rear-warning'){audio.warning('rear',(event.x??0)/5.3);showToast(event.text,true);}
+  if(event.type==='rear-warning'){audio.warning('rear',(event.x??0)/5.3);showToast(event.text,true);}if(event.type==='rear-swerve'){audio.warning('rear',(event.x??0)/5.3);showToast(event.text,true);}
   if(event.type==='paan-warning'){audio.warning('paan',(event.x??0)/5.3);showToast(event.text,true);}
   if(event.type==='crash'){lastFailure=event.text;if(/paan/i.test(event.text)){splashUntil=now+1900;$('#paan-splash').classList.add('splashed');}audio.impact();audio.say('আস্তে ভাই, একটু জায়গা দেন!');showToast(event.text,true);$('#impact').classList.add('hit');feedbackUntil=now+260;}
   if(event.type==='coin')audio.coin(event.chain??1);if(event.type==='snack'){audio.snack(event.kind??'cha');showToast(event.text);}if(event.type==='stomach'){audio.stomach();showToast(event.text,true);}if(event.type==='belly'){audio.belly();showToast(event.text);}
