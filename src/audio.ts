@@ -45,6 +45,7 @@ export class GameAudio {
   private nextStreetSound = 0;
   private lastHorn = -10;
   private lastImpact = -10;
+  private lastJump = -10;
   private lastSpeech = -10;
 
   async init(): Promise<void> {
@@ -195,7 +196,7 @@ export class GameAudio {
   resetRide(): void {
     this.active = false; this.silenceRide();
     this.fieldOffset = 0;
-    this.lastHorn = this.lastImpact = this.lastSpeech = this.lastReward = -10;
+    this.lastHorn = this.lastImpact = this.lastSpeech = this.lastReward = this.lastJump = -10;
     this.nextStreetSound = this.context?.currentTime ?? 0;
     this.nextRearHorn = this.context?.currentTime ?? 0;
     this.duckUntil = this.warningUntil = 0; this.streetBeat = 0;
@@ -253,6 +254,21 @@ export class GameAudio {
     this.lastImpact = this.context!.currentTime;
     this.tone(74, 0.22, 0.3, 'sine');
     this.tone(142, 0.09, 0.09, 'triangle');
+  }
+
+  jump(vehicle: string): void {
+    if (!this.ready() || this.context!.currentTime - this.lastJump < 0.25) return;
+    this.lastJump = this.context!.currentTime;
+    const heavy = /car|truck/i.test(vehicle);
+    // A springy rise for light vehicles, a low suspension thump for heavy ones.
+    this.tone(heavy ? 92 : 330, heavy ? 0.2 : 0.16, heavy ? 0.16 : 0.07, heavy ? 'sine' : 'triangle', 0, 0, false, heavy ? 62 : 660);
+    if (/bicycle/i.test(vehicle)) this.tone(1568, 0.3, 0.06, 'sine', 0.05);
+  }
+
+  bump(): void {
+    if (!this.ready()) return;
+    this.impact();
+    [0, 0.05, 0.1].forEach(delay => this.tone(180 + delay * 400, 0.05, 0.05, 'square', delay));
   }
 
   reward(): void {
