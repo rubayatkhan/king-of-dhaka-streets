@@ -2,8 +2,9 @@ import type { VehicleLook } from './models';
 import type { PowerUp, PowerUpStats } from './pickups';
 import type { Progress, Upgrades } from './progress';
 import type { VehicleKind } from './simulation';
+import { DEFAULT_HORN, type HornId } from './soundbank';
 
-export type Slot = 'paint' | 'art' | 'extra' | 'outfit';
+export type Slot = 'paint' | 'art' | 'extra' | 'outfit' | 'sound';
 export interface LookItem {
   id: string;
   name: string;
@@ -11,6 +12,7 @@ export interface LookItem {
   slot: Slot;
   price: number;
   look: VehicleLook;
+  horn?: HornId;
 }
 
 // Original looks drawn in code: rickshaw and truck art, paint, accessories and outfits.
@@ -35,6 +37,12 @@ export const LOOKS: LookItem[] = [
   { id: 'outfit-panjabi', name: 'Panjabi', vehicle: 'rider', slot: 'outfit', price: 350, look: { outfit: { shirt: 0xf4e3c1, lower: 0xf4e3c1, accent: 0xb88a3e } } },
   { id: 'outfit-school', name: 'School uniform', vehicle: 'rider', slot: 'outfit', price: 250, look: { outfit: { shirt: 0xf7f7f2, lower: 0x1f3b5c } } },
   { id: 'outfit-cricket', name: 'Red-and-green cricket jersey', vehicle: 'rider', slot: 'outfit', price: 500, look: { outfit: { shirt: 0x0f6b3a, lower: 0x1d2b2a, accent: 0xd62b2b } } },
+  { id: 'bike-bell-brass', name: 'Brass double bell', vehicle: 'bicycle', slot: 'sound', price: 150, look: {}, horn: 'bike-bell-brass' },
+  { id: 'rickshaw-bell-double', name: 'Two-tone rickshaw bell', vehicle: 'rickshaw', slot: 'sound', price: 200, look: {}, horn: 'rickshaw-bell-double' },
+  { id: 'motorbike-horn-musical', name: 'Musical horn', vehicle: 'motorbike', slot: 'sound', price: 250, look: {}, horn: 'motorbike-horn-musical' },
+  { id: 'car-horn-taxi', name: 'Taxi double beep', vehicle: 'car', slot: 'sound', price: 250, look: {}, horn: 'car-horn-taxi' },
+  { id: 'truck-horn-melody', name: 'Melody pressure horn', vehicle: 'truck', slot: 'sound', price: 600, look: {}, horn: 'truck-horn-melody' },
+  { id: 'truck-horn-ship', name: 'Launch-deep horn', vehicle: 'truck', slot: 'sound', price: 450, look: {}, horn: 'truck-horn-ship' },
 ];
 
 export const UPGRADE_PRICES = [200, 500, 1000, 2000] as const;
@@ -113,6 +121,11 @@ export function vehicleLook(save: Progress, vehicle: VehicleKind): VehicleLook {
     if (item && save.owned.includes(item.id) && slotKey(item) === key) Object.assign(look, item.look);
   }
   return look;
+}
+
+export function equippedHorn(save: Progress, vehicle: VehicleKind): HornId {
+  const item = LOOKS.find(i => i.id === save.equipped[`${vehicle}:sound`]);
+  return item?.horn && item.vehicle === vehicle && save.owned.includes(item.id) ? item.horn : DEFAULT_HORN[vehicle];
 }
 
 export function describePurchases(save: Progress): string {

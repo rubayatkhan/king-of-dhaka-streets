@@ -7,7 +7,7 @@ export type ShopTab = 'looks' | 'power-ups';
 export type RowState = 'buy' | 'too-poor' | 'equip' | 'equipped' | 'maxed' | 'locked';
 export interface ShopRow { id: string; name: string; detail: string; price: number; state: RowState; level?: number }
 
-const SLOT_NAMES = { paint: 'Paint', art: 'Art', extra: 'Extra', outfit: 'Outfit' } as const;
+const SLOT_NAMES = { paint: 'Paint', art: 'Art', extra: 'Extra', outfit: 'Outfit', sound: 'Bell & horn' } as const;
 const POWER_UP_NAMES: Record<PowerUp, string> = { cha: 'Cha boost', jhalmuri: 'Jhalmuri magnet', chaap: 'Chaap belly' };
 const POWER_UP_ICONS: Record<PowerUp, string> = { cha: '☕', jhalmuri: '🧲', chaap: '🍢' };
 const EXTRA_ICONS: Record<string, string> = { streamers: '🎏', basket: '🧺', garland: '🌸', 'red-helmet': '⛑️' };
@@ -92,7 +92,9 @@ export function powerUpRows(save: Progress): ShopRow[] {
 // A small picture of each item: the paint colour, the art motif, the extra, the outfit's colours or the power-up.
 function swatch(r: ShopRow, tab: ShopTab): string {
   if (tab === 'power-ups') return `<span class="swatch ${r.id}" aria-hidden="true">${POWER_UP_ICONS[r.id as PowerUp]}</span>`;
-  const look = LOOKS.find(i => i.id === r.id)?.look ?? {};
+  const item = LOOKS.find(i => i.id === r.id);
+  if (item?.slot === 'sound') return `<span class="swatch extra" aria-hidden="true">${item.vehicle === 'bicycle' || item.vehicle === 'rickshaw' ? '🔔' : '📯'}</span>`;
+  const look = item?.look ?? {};
   if (look.outfit) {
     const { shirt, lower, accent } = look.outfit;
     return `<span class="swatch outfit" style="--shirt:${hex(shirt)};--lower:${hex(lower)};--accent:${accent === undefined ? 'transparent' : hex(accent)}" aria-hidden="true"></span>`;
@@ -114,6 +116,6 @@ export function renderShop(save: Progress, vehicle: VehicleKind, tab: ShopTab, u
     const tag = r.state === 'buy' || r.state === 'too-poor' || r.state === 'locked' ? `<span class="tag">৳${r.price}</span>` : '';
     const level = r.level === undefined ? '' : pips(r.level);
     const button = `<button ${attr}="${r.id}" ${r.state === 'maxed' || r.state === 'locked' ? 'disabled' : ''} aria-label="${actionAria(r, save.taka)}">${actionLabel(r, save.taka)}</button>`;
-    return `<div class="shop-card ${r.state}"><div class="shop-art">${swatch(r, tab)}${tag}</div><div class="shop-info"><strong>${r.name}</strong>${level}<small>${r.detail}</small></div>${button}</div>`;
+    return `<div class="shop-card ${r.state}"><div class="shop-art">${swatch(r, tab)}${tag}</div><div class="shop-info"><strong>${r.name}</strong>${level}<small>${r.detail}</small>${LOOKS.find(i => i.id === r.id)?.slot === 'sound' ? `<button class="hear" data-hear="${r.id}" aria-label="Hear ${r.name}">🔊 Hear it</button>` : ''}</div>${button}</div>`;
   }).join('');
 }
