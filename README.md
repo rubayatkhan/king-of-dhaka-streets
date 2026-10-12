@@ -31,10 +31,13 @@ Open the displayed local address. For a phone on the same Wi-Fi, use the display
 
 | Action | Phone | Keyboard |
 | --- | --- | --- |
-| Steer | Hold left/right arrow | Left/right arrow or A/D |
-| Brake | Hold Brake | Down arrow, S or Space |
+| Steer | Drag left/right (Swipe mode) or hold the arrows (Buttons mode) | Left/right arrow or A/D |
+| Jump | Flick up, or tap Jump | Up arrow or W |
+| Brake | Swipe down and hold, or hold Brake | Down arrow, S or Space |
 | Bell/horn | Tap Bell/Horn | H |
 | Pause | Top-right pause | Escape |
+
+Swipe is the default on phones and tablets; switch to Buttons in settings.
 
 Forward movement is automatic. Complete three distinct missions with each vehicle before graduating. Every finish earns a medal and advances; optional gold targets reward three remaining hearts, close passes and pace. Close shaves build a short score chain. Retry starts the same mission immediately.
 

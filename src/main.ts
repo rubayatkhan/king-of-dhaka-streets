@@ -6,6 +6,7 @@ import { STAGES, type Neighborhood } from './campaign';
 import { loadProgress, completeStage, availableStage } from './progress';
 import { sendFeedback, type FeedbackKind } from './feedback';
 import { freshSeed } from './seed';
+import { SwipeRecognizer } from './controls';
 
 const $=<T extends HTMLElement=HTMLElement>(s:string)=>document.querySelector<T>(s)!;
 const crown='<svg viewBox="0 0 32 28" fill="none"><path d="m3 7 6 6L16 3l7 10 6-6-4 17H7L3 7Z" stroke="currentColor" stroke-width="2"/><path d="M8 20h16" stroke="currentColor" stroke-width="2"/></svg>';
@@ -27,7 +28,7 @@ const deference=['Find your own gap','A little room for a rickshaw','Small traff
 const audio=new GameAudio();audio.setMuted(save.muted);
 let leftHeld=false,rightHeld=false;
 let steer=0,brake=false,desired=0,accumulator=0,last=performance.now(),screen='menu',toastUntil=0,feedbackUntil=0,nudgeUntil=0,seed=27,ending=false,nextVendor=12,splashUntil=0,hornUntil=0,comboUntil=0,districtUntil=0,lastDistrict:Neighborhood=sim.neighborhood,toastPriority=0,lastFailure='';
-const keys=new Set<string>();
+const keys=new Set<string>();const swipe=new SwipeRecognizer(innerWidth);
 let renderDirty=true,renderedSimulation:Simulation|undefined,renderedStatus='';
 $('#app').innerHTML=`
  <canvas id="game" aria-label="Three-dimensional Old Dhaka street"></canvas>
@@ -51,11 +52,11 @@ $('#app').innerHTML=`
   <div id="rear-alert" class="rear-alert hidden" role="status" aria-live="polite"><span id="rear-title">Bus behind!</span><div class="rear-road"><i id="rear-vehicle"></i><b id="rear-player"></b></div><small>Leave the highlighted line</small></div><div id="district-banner"><small>NOW ENTERING</small><strong></strong><span></span></div><div id="toast" role="status" aria-live="polite"></div><div id="combo"></div><div id="authority-hud"></div>
   <div class="hud-bottom"><div class="steer-controls"><span class="control-label">Steer</span><div class="steer-pad" id="steer-pad"><button id="left" aria-label="Steer left">‹</button><span class="steer-line"></span><button id="right" aria-label="Steer right">›</button></div></div>
    <div class="speedometer"><div><strong id="speed">0</strong><span>km/h</span></div><div id="hearts" aria-label="3 composure remaining">● ● ●</div></div>
-   <div class="action-controls"><button id="brake" class="brake-btn" aria-label="Hold to brake"><svg viewBox="0 0 30 30" fill="none"><circle cx="15" cy="15" r="9" stroke="currentColor" stroke-width="2"/><path d="M4 8q-5 7 0 14M26 8q5 7 0 14M15 9v8m0 3v1" stroke="currentColor" stroke-width="2"/></svg><span>Brake</span></button><button id="horn" class="horn-btn" aria-label="Ring bell">${bell}<span id="horn-label">Bell</span></button></div>
+   <div class="action-controls"><button id="jump" class="brake-btn jump-btn" aria-label="Jump"><svg viewBox="0 0 30 30" fill="none"><path d="M15 24V8m-7 7 7-7 7 7" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg><span>Jump</span></button><button id="brake" class="brake-btn" aria-label="Hold to brake"><svg viewBox="0 0 30 30" fill="none"><circle cx="15" cy="15" r="9" stroke="currentColor" stroke-width="2"/><path d="M4 8q-5 7 0 14M26 8q5 7 0 14M15 9v8m0 3v1" stroke="currentColor" stroke-width="2"/></svg><span>Brake</span></button><button id="horn" class="horn-btn" aria-label="Ring bell">${bell}<span id="horn-label">Bell</span></button></div>
   </div><div id="tutorial">Hold arrows to steer · Brake for space · Watch behind</div>
  </section>
  <section id="overlay" class="overlay hidden" role="dialog" aria-modal="true" aria-label="Ride menu"><div class="panel" id="panel"></div></section>
- <section id="settings" class="overlay hidden" role="dialog" aria-modal="true" aria-label="Ride settings"><div class="panel settings-panel"><span class="panel-kicker">Make yourself comfortable</span><h2>Your ride, your way.</h2><label>Graphics <select id="quality"><option value="auto">Adaptive</option><option value="low">Battery saver</option><option value="high">Detailed</option></select></label><label>Gentler camera <input type="checkbox" id="reduced"/></label><label>Sound <input type="checkbox" id="sound-setting"/></label><p class="small-note">Real street ambience, original sound effects and AI-generated Bangla voices. Captions always stay on. <a href="${import.meta.env.BASE_URL}audio/credits.html" target="_blank" rel="noopener">Sound credits</a></p><p class="small-note">A fictional route inspired by Old Dhaka. Progress saves on this device. Keyboard: ← → to steer, ↓ or Space to brake, H to honk, Esc to pause.</p><button id="settings-close" class="primary">Back to the street</button></div></section>
+ <section id="settings" class="overlay hidden" role="dialog" aria-modal="true" aria-label="Ride settings"><div class="panel settings-panel"><span class="panel-kicker">Make yourself comfortable</span><h2>Your ride, your way.</h2><label>Graphics <select id="quality"><option value="auto">Adaptive</option><option value="low">Battery saver</option><option value="high">Detailed</option></select></label><label>Gentler camera <input type="checkbox" id="reduced"/></label><label>Controls <select id="controls-mode"><option value="swipe">Swipe</option><option value="buttons">Buttons</option></select></label><label>Sound <input type="checkbox" id="sound-setting"/></label><p class="small-note">Real street ambience, original sound effects and AI-generated Bangla voices. Captions always stay on. <a href="${import.meta.env.BASE_URL}audio/credits.html" target="_blank" rel="noopener">Sound credits</a></p><p class="small-note">A fictional route inspired by Old Dhaka. Progress saves on this device. Keyboard: ← → to steer, ↓ or Space to brake, H to honk, Esc to pause.</p><button id="settings-close" class="primary">Back to the street</button></div></section>
  <section id="feedback" class="overlay hidden" role="dialog" aria-modal="true" aria-labelledby="feedback-title"><form id="feedback-form" class="panel feedback-panel" novalidate><span class="panel-kicker">Beta tester HQ</span><h2 id="feedback-title">Make the game better.</h2><p>What should we add, fix or keep? Every note goes straight to the game maker.</p>
   <fieldset class="feedback-kinds"><legend>This is…</legend><label><input type="radio" name="kind" value="idea" checked/><span>💡 A new idea</span></label><label><input type="radio" name="kind" value="bug"/><span>🛠 Something broken</span></label><label><input type="radio" name="kind" value="love"/><span>❤️ Something I love</span></label></fieldset>
   <label class="field">Your idea<textarea id="feedback-message" rows="4" maxlength="2000" placeholder="A boat race at Sadarghat! A mango truck! Faster rickshaws!"></textarea></label>
@@ -77,7 +78,7 @@ function drawGarage(){
  document.querySelectorAll<HTMLButtonElement>('[data-mission]').forEach(b=>b.onclick=()=>{lesson=Number(b.dataset.mission);sim=new Simulation(selected,seed,lesson);drawGarage();});
 }
 function updateSound(){document.querySelectorAll<HTMLButtonElement>('.sound-toggle').forEach(b=>{b.classList.toggle('muted',save.muted);b.setAttribute('aria-label',save.muted?'Turn sound on':'Mute sound');});$<HTMLInputElement>('#sound-setting').checked=!save.muted;}
-function clearInput(){keys.clear();leftHeld=rightHeld=false;desired=steer=0;brake=false;nudgeUntil=0;document.querySelectorAll('.held').forEach(b=>b.classList.remove('held'));}
+function clearInput(){keys.clear();swipe.clear();leftHeld=rightHeld=false;desired=steer=0;brake=false;nudgeUntil=0;document.querySelectorAll('.held').forEach(b=>b.classList.remove('held'));}
 async function start(){
  if(!reviewMode&&stageId()>availableStage(save))return;
  if(!world){$('#start').textContent='Opening the street…';return;}
@@ -122,20 +123,33 @@ $('#reduced').addEventListener('change',e=>{save.reduced=(e.target as HTMLInputE
 $('#sound-setting').addEventListener('change',e=>{save.muted=!(e.target as HTMLInputElement).checked;audio.setMuted(save.muted);updateSound();persist();});
 $('#quality').setAttribute('value',save.quality);($('#quality') as HTMLSelectElement).value=save.quality;($('#reduced') as HTMLInputElement).checked=save.reduced;
 for(const b of document.querySelectorAll<HTMLButtonElement>('.sound-toggle'))b.onclick=()=>{save.muted=!save.muted;audio.setMuted(save.muted);void audio.init();persist();updateSound();};
+const touchFirst=matchMedia('(pointer: coarse)').matches;
+const controlMode=()=>save.controls??(touchFirst?'swipe':'buttons');
+function applyControlMode(){const mode=controlMode();$('#hud').classList.toggle('swipe-mode',mode==='swipe');$<HTMLSelectElement>('#controls-mode').value=mode;$('#tutorial').textContent=mode==='swipe'?'Drag to steer · Flick up to jump · Swipe down to brake':'Arrows to steer · ↑ to jump · Brake for space';}
+applyControlMode();
+$('#controls-mode').addEventListener('change',e=>{const v=(e.target as HTMLSelectElement).value;save.controls=v==='swipe'?'swipe':'buttons';swipe.clear();persist();applyControlMode();});
+function jump(){if(sim.status==='playing')sim.jump();}
+// The canvas is the swipe surface; HUD buttons sit above it and keep working.
+const surface=$('#game');
+surface.addEventListener('pointerdown',e=>{if(controlMode()!=='swipe'||sim.status!=='playing')return;e.preventDefault();surface.setPointerCapture(e.pointerId);swipe.down(e.pointerId,e.clientX,e.clientY,e.timeStamp);});
+surface.addEventListener('pointermove',e=>swipe.move(e.pointerId,e.clientX,e.clientY,e.timeStamp));
+surface.addEventListener('pointerup',e=>swipe.up(e.pointerId,e.clientX,e.clientY,e.timeStamp));
+for(const type of ['pointercancel','lostpointercapture'] as const)surface.addEventListener(type,e=>swipe.cancel(e.pointerId));
+$('#jump').addEventListener('pointerdown',e=>{e.preventDefault();jump();});$('#jump').addEventListener('click',e=>{if(e.detail===0)jump();});
 function hold(id:string,on:()=>void,off:()=>void){const b=$(id);b.addEventListener('pointerdown',e=>{if(sim.status!=='playing')return;e.preventDefault();b.setPointerCapture(e.pointerId);nudgeUntil=0;on();b.classList.add('held');});for(const event of ['pointerup','pointercancel','lostpointercapture'])b.addEventListener(event,()=>{off();b.classList.remove('held');});}
 const heldSteer=()=>desired=Number(rightHeld)-Number(leftHeld);
 hold('#left',()=>{leftHeld=true;heldSteer();},()=>{leftHeld=false;heldSteer();});hold('#right',()=>{rightHeld=true;heldSteer();},()=>{rightHeld=false;heldSteer();});hold('#brake',()=>brake=true,()=>brake=false);
 // Click also gives keyboard/assistive activation a brief, predictable steering nudge.
 $('#left').addEventListener('click',e=>{if(e.detail===0){desired=-1;nudgeUntil=performance.now()+180;}});$('#right').addEventListener('click',e=>{if(e.detail===0){desired=1;nudgeUntil=performance.now()+180;}});
-window.addEventListener('keydown',e=>{if(feedbackOpen()||e.defaultPrevented)return;if(screen!=='playing'||!['ArrowLeft','ArrowRight','ArrowDown','a','d','s',' ','h','Escape'].includes(e.key))return;e.preventDefault();keys.add(e.key);if(e.key==='Escape'&&!e.repeat)togglePause();if(e.key==='h'&&!e.repeat)horn();});window.addEventListener('keyup',e=>keys.delete(e.key));
-window.addEventListener('blur',()=>{clearInput();if(sim.status==='playing')togglePause();});document.addEventListener('visibilitychange',()=>{if(document.hidden&&sim.status==='playing')togglePause();});window.addEventListener('resize',()=>{world?.resize();renderDirty=true;});
+window.addEventListener('keydown',e=>{if(feedbackOpen()||e.defaultPrevented)return;if(screen!=='playing'||!['ArrowLeft','ArrowRight','ArrowDown','ArrowUp','a','d','s','w',' ','h','Escape'].includes(e.key))return;e.preventDefault();keys.add(e.key);if(e.key==='Escape'&&!e.repeat)togglePause();if(e.key==='h'&&!e.repeat)horn();if((e.key==='ArrowUp'||e.key==='w')&&!e.repeat)jump();});window.addEventListener('keyup',e=>keys.delete(e.key));
+window.addEventListener('blur',()=>{clearInput();if(sim.status==='playing')togglePause();});document.addEventListener('visibilitychange',()=>{if(document.hidden&&sim.status==='playing')togglePause();});window.addEventListener('resize',()=>{world?.resize();swipe.resize(innerWidth);renderDirty=true;});
 $('#game').addEventListener('webglcontextlost',e=>{e.preventDefault();if(sim.status==='playing')togglePause();showToast('Graphics interrupted. Waiting for the street to return…');});
 $('#game').addEventListener('webglcontextrestored',()=>{renderDirty=true;showToast('Graphics restored. You can keep riding.');});
 function frame(now:number){const dt=Math.min((now-last)/1000,.05);last=now;
  if(nudgeUntil&&now>nudgeUntil){desired=0;nudgeUntil=0;}
  const keyboard=(keys.has('ArrowRight')||keys.has('d')?1:0)-(keys.has('ArrowLeft')||keys.has('a')?1:0);
- steer+=((keyboard||desired)-steer)*(1-Math.exp(-dt*17));
- accumulator+=dt;while(accumulator>=1/60){sim.update(1/60,{steer,brake:brake||keys.has('ArrowDown')||keys.has('s')||keys.has(' ')});accumulator-=1/60;}
+ if(swipe.takeJump())jump();steer+=((keyboard||swipe.steer||desired)-steer)*(1-Math.exp(-dt*17));
+ accumulator+=dt;while(accumulator>=1/60){sim.update(1/60,{steer,brake:brake||swipe.brake||keys.has('ArrowDown')||keys.has('s')||keys.has(' ')});accumulator-=1/60;}
  const rear=sim.rearThreats.reduce<typeof sim.rearThreats[number]|undefined>((closest,t)=>!closest||t.timeToContact<closest.timeToContact?t:closest,undefined);
  audio.update(sim.speed,VEHICLES[selected].id,sim.status==='playing',{neighborhood:sim.neighborhood,intensity:.5+lesson*.22,rear:rear?{kind:rear.kind,urgency:rear.urgency,x:rear.x}:undefined,traffic:sim.traffic,playerZ:sim.z});
  if(sim.status==='playing'&&sim.neighborhood!==lastDistrict){lastDistrict=sim.neighborhood;announceDistrict();}
@@ -145,6 +159,7 @@ function frame(now:number){const dt=Math.min((now-last)/1000,.05);last=now;
  if(sim.status==='playing'&&sim.elapsed>nextVendor){nextVendor+=18;if(now>toastUntil&&!rear){const localCall=sim.neighborhood==='riverfront'?['সদরঘাট! লঞ্চ ছাড়বে!','সদরঘাট! · The launch is leaving!']:sim.neighborhood==='boulevard'?['তাজা সবজি!','তাজা সবজি! · Fresh vegetables!']:['এই, চা! গরম চা! এক কাপ নিয়ে যান!','চা! গরম চা! · Hot tea, fresh from the kettle.'];audio.say(localCall[0]);showToast(localCall[1]);}}
  const events=sim.events.splice(0);
  for(const event of events){
+  if(event.type==='jump')audio.jump(VEHICLES[selected].id);if(event.type==='land')world?.land();if(event.type==='bump'){world?.shake(.35);world?.land();audio.bump();}
   if(event.type==='horn'){hornUntil=now+250;$('#horn').classList.add('ringing');audio.horn(VEHICLES[selected].id);if(!rear)showToast(event.text);}
   if(event.type==='warning'){showToast(event.text);if(event.text.includes('Ostad'))audio.say('ওস্তাদ, বামে প্লাস্টিক!');if(/cow|goru/i.test(event.text))audio.warning('cow',(event.x??0)/5.3);}
   if(event.type==='rear-warning'){audio.warning('rear',(event.x??0)/5.3);showToast(event.text,true);}
