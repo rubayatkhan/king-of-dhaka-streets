@@ -550,6 +550,21 @@ describe('taka and street food', () => {
     }
   });
 
+  it('collects an arc coin only in the air, even one sitting at ground height', () => {
+    for (const hop of [false, true]) {
+      const sim = bare(); sim.speed = 10; sim.coins = [coin({ trail: 'arc', y: COIN_HEIGHT, z: -3.5 })];
+      if (hop) sim.jump();
+      advance(sim, 0.6);
+      expect(sim.taka, `jump ${hop}`).toBe(hop ? 1 : 0);
+    }
+  });
+
+  it('does not let the magnet pull an arc coin down to a grounded rider', () => {
+    const sim = bare(); sim.speed = 10; sim.effects.magnet = 5; sim.coins = [coin({ trail: 'arc', x: 1.5, y: COIN_HEIGHT + 0.5, z: -6 })];
+    advance(sim, 1);
+    expect(sim.taka).toBe(0); expect(sim.coins[0].x).toBe(1.5); expect(sim.coins[0].y).toBe(COIN_HEIGHT + 0.5);
+  });
+
   it('pulls nearby coins in while the jhalmuri magnet is active', () => {
     for (const magnet of [0, 5]) {
       const sim = bare(); sim.speed = 10; sim.effects.magnet = magnet; sim.coins = [coin({ x: 2.2, z: -6 })];
@@ -596,6 +611,16 @@ describe('taka and street food', () => {
     sim.coins = [coin({ id: 1, x: 0, z: -20 }), coin({ id: 2, x: 4, z: -20 }), coin({ id: 3, x: 0, z: -200 })];
     sim.sweepCoins(0.5);
     expect(sim.coins.map(c => c.gone)).toEqual([true, false, false]);
+  });
+
+  it('keeps sweeping a rear threat lane as far coins scroll into range', () => {
+    const sim = bare(4, 2); sim.speed = 20; sim.distance = 200; sim.z = -200;
+    sim.rearThreats = [{ actorId: 7, kind: 'truck', x: 0.5, z: sim.z + 36, urgency: 0, timeToContact: 7, warningRemaining: 2, phase: 'warning' }];
+    sim.traffic = [obstacle({ id: 7, kind: 'truck', x: 0.5, z: sim.z + 36, width: 2.5, length: 6.5, speed: 30, behavior: 'rear-threat', phase: 'warning', warn: true })];
+    sim.coins = [coin({ id: 1, x: 0.5, z: -350 }), coin({ id: 2, x: 4.5, z: -350 })];
+    sim.update(1 / 60, straight); expect(sim.coins.map(c => c.gone)).toEqual([false, false]);
+    advance(sim, 1.5);
+    expect(sim.rearThreats).toHaveLength(1); expect(sim.coins.map(c => c.gone)).toEqual([true, false]);
   });
 
   it('stops snack effects once the ride is over', () => {

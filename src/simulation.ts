@@ -119,14 +119,14 @@ export class Simulation {
       if (coin.collected || coin.gone) continue;
       const ahead = this.z - coin.z;
       if (ahead < -reachZ - 2 || ahead > 30) continue;
-      if (this.effects.magnet > 0) {
+      if (this.effects.magnet > 0 && coin.trail !== 'arc') {
         const gap = Math.hypot(coin.x - this.x, ahead);
         if (gap > 1e-6 && gap < this.powerUps.magnetRadius + reachX) {
           const pull = Math.min(1, 14 * dt / gap);
           coin.x += (this.x - coin.x) * pull; coin.z += (this.z - coin.z) * pull; coin.y += (COIN_HEIGHT + this.y - coin.y) * pull;
         }
       }
-      if (Math.abs(coin.x - this.x) < reachX && Math.abs(this.z - coin.z) < reachZ && coin.y - COIN_HEIGHT <= this.y + 0.25) {
+      if (Math.abs(coin.x - this.x) < reachX && Math.abs(this.z - coin.z) < reachZ && coin.y - COIN_HEIGHT <= this.y + 0.25 && (coin.trail !== 'arc' || this.airborne)) {
         coin.collected = true; this.taka += coin.value;
         this.coinChain = this.elapsed - this.lastCoinAt <= 0.6 ? this.coinChain + 1 : 1; this.lastCoinAt = this.elapsed;
         this.events.push({ type: 'coin', text: `৳${coin.value}`, x: coin.x, z: coin.z, value: coin.value, chain: this.coinChain });
@@ -428,7 +428,6 @@ export class Simulation {
       if (this.escapeExists(candidate)) {
       this.rearEncounters++; this.encounterId++;
       this.rearThreats.push(candidate);
-      this.sweepCoins(x);
       this.traffic.push({ id: actorId, kind, x, z, speed: this.maxSpeed + 9, width: kind === 'bus' ? 2.4 : 2.5, length: 6.5,
         passed: false, warn: true, behavior: 'rear-threat', phase: 'warning', warningRemaining: 3 });
       this.events.push({ type: 'rear-warning', text: kind === 'bus' ? 'Bus behind! Move out of the marked lane.' : 'Truck behind! Clear its lane.', x, z, actorId, priority: 'urgent' });
@@ -438,6 +437,7 @@ export class Simulation {
     for (const threat of this.rearThreats) {
       const actor = this.traffic.find(t => t.id === threat.actorId);
       if (!actor) { done.add(threat.actorId); continue; }
+      this.sweepCoins(threat.x); // every step, so coins that scroll into range mid-encounter are cleared too
       if (threat.phase === 'warning') {
         threat.warningRemaining = Math.max(0, threat.warningRemaining - dt);
         threat.z = this.z + 36;
