@@ -18,9 +18,9 @@ function vehicleIcon(i:number){
  return `<svg viewBox="0 0 64 40" fill="none"><circle cx="15" cy="31" r="6"/><circle cx="49" cy="31" r="6"/><path d="M9 31H5V18l9-10h${i===4?'17v17h28V10H34':'28l10 10h7v13h-4'}M21 31h22M15 11l-5 10h38L40 11H15Z"/></svg>`;
 }
 const reviewMode=import.meta.env.DEV&&new URLSearchParams(location.search).has('review');
-function readSave(){try{return loadProgress(localStorage.getItem('dhaka-streets-v2'),localStorage.getItem('dhaka-streets-v1'),matchMedia('(prefers-reduced-motion: reduce)').matches);}catch{return loadProgress(null,null);}}
+function readSave(){try{return loadProgress(localStorage.getItem('dhaka-streets-v3')??localStorage.getItem('dhaka-streets-v2'),localStorage.getItem('dhaka-streets-v1'),matchMedia('(prefers-reduced-motion: reduce)').matches);}catch{return loadProgress(null,null);}}
 const save=readSave();
-const persist=()=>{if(reviewMode)return;try{localStorage.setItem('dhaka-streets-v2',JSON.stringify(save));}catch{/* A full or private store never prevents play. */}};
+const persist=()=>{if(reviewMode)return;try{localStorage.setItem('dhaka-streets-v3',JSON.stringify(save));}catch{/* A full or private store never prevents play. */}};
 let selected=Math.floor(availableStage(save)/3),lesson=availableStage(save)%3,sim=new Simulation(selected,27,lesson),world:World|undefined;
 const stageId=()=>selected*3+lesson;
 const districts:Record<Neighborhood,{name:string;bangla:string;tag:string}>={bazaar:{name:'Shankhari Bazaar',bangla:'শাঁখারীবাজার',tag:'Balconies, bakarkhani & bicycle bells'},riverfront:{name:'Sadarghat',bangla:'সদরঘাট',tag:'Launch horns over the Buriganga'},boulevard:{name:'Karwan Bazar',bangla:'কারওয়ান বাজার',tag:'Wholesale hustle. Rush-hour nerve.'}};
