@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { heartsLabel, raceBar, shavesChip } from '../src/hud';
+import { heartsLabel, raceBar, shavesChip, toastAllowed, toastMs } from '../src/hud';
 
 const ride = (distance: number, elapsed: number, routeLength = 650, parTime = 74) => raceBar({ distance, routeLength, elapsed, parTime });
 
@@ -55,5 +55,26 @@ describe('the close-shaves chip', () => {
     expect(shavesChip(0, 2)).toEqual({ text: 'Close shaves 0/2', done: false });
     expect(shavesChip(2, 2)).toEqual({ text: 'Close shaves 2/2 ✓', done: true });
     expect(shavesChip(5, 4)).toEqual({ text: 'Close shaves 4/4 ✓', done: true });
+  });
+});
+
+describe('one message at a time at the bottom of the screen', () => {
+  it('holds back ordinary street messages while a bus or truck warning is showing', () => {
+    expect(toastAllowed({ urgent: false, rearShowing: true, urgentShowing: false })).toBe(false);
+    expect(toastAllowed({ urgent: false, rearShowing: false, urgentShowing: false })).toBe(true);
+  });
+
+  it('lets a crash or paan warning through even over the bus warning', () => {
+    expect(toastAllowed({ urgent: true, rearShowing: true, urgentShowing: false })).toBe(true);
+    expect(toastAllowed({ urgent: true, rearShowing: false, urgentShowing: true })).toBe(true);
+  });
+
+  it('never lets an ordinary message replace an urgent one still on screen', () => {
+    expect(toastAllowed({ urgent: false, rearShowing: false, urgentShowing: true })).toBe(false);
+  });
+
+  it('keeps ordinary messages short so the screen clears quickly', () => {
+    expect(toastMs(false)).toBe(2500);
+    expect(toastMs(true)).toBe(3000);
   });
 });

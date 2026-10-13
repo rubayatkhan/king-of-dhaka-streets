@@ -21,3 +21,10 @@ export function shavesChip(nearMisses: number, target: number): { text: string; 
   const done = nearMisses >= target;
   return { text: `Close shaves ${Math.min(nearMisses, target)}/${target}${done ? ' ✓' : ''}`, done };
 }
+
+/** The bottom message slot shows one thing at a time: a bus or truck warning holds ordinary messages back, and only a crash or paan warning cuts in. */
+export function toastAllowed({ urgent, rearShowing, urgentShowing }: { urgent: boolean; rearShowing: boolean; urgentShowing: boolean }): boolean {
+  return urgent || (!rearShowing && !urgentShowing);
+}
+
+export const toastMs = (urgent: boolean) => urgent ? 3000 : 2500;

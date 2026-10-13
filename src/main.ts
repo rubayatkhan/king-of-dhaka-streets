@@ -10,7 +10,7 @@ import { isRepeatTap, renderShop, type ShopTab, type Tap } from './shop';
 import { sendFeedback, type FeedbackKind } from './feedback';
 import { freshSeed } from './seed';
 import { SwipeRecognizer } from './controls';
-import { heartsLabel, raceBar, shavesChip } from './hud';
+import { heartsLabel, raceBar, shavesChip, toastAllowed, toastMs } from './hud';
 import { districtCall, passCue } from './soundscape';
 import { SOUNDS, type SoundId } from './soundbank';
 import { VOICE_LINES } from './voices';
@@ -105,7 +105,7 @@ async function start(){
  $('#authority-hud').textContent=deference[selected];showToast(`${sim.stage.name} · ${sim.stage.objective}`);
  try{await audio.init();void audio.prepareDistrict(sim.neighborhood);nextDistrict='';}catch{showToast('Sound unavailable. Captions are on.');}
 }
-function showToast(text:string,urgent=false){const now=performance.now();if(!urgent&&toastPriority&&now<toastUntil)return;toastPriority=urgent?1:0;$('#toast').textContent=text;$('#toast').classList.toggle('urgent',urgent);$('#toast').classList.add('shown');toastUntil=now+(urgent?3000:3200);}
+function showToast(text:string,urgent=false){const now=performance.now();if(!toastAllowed({urgent,rearShowing:!$('#rear-alert').classList.contains('hidden'),urgentShowing:!!toastPriority&&now<toastUntil}))return;toastPriority=urgent?1:0;$('#toast').textContent=text;$('#toast').classList.toggle('urgent',urgent);$('#toast').classList.add('shown');toastUntil=now+toastMs(urgent);}
 function announceDistrict(){const district=districts[sim.neighborhood];$('#district-name').textContent=district.name;$('#district-banner strong').textContent=district.bangla;$('#district-banner span').textContent=district.name;$('#district-banner').classList.add('visible');districtUntil=performance.now()+2200;}
 function horn(){if(sim.status!=='playing')return;sim.horn();}
 function togglePause(){if(screen!=='playing')return;if(sim.status==='playing'){sim.pause();clearInput();$('#hud').inert=true;$('#panel').innerHTML=`<span class="panel-kicker">Take a breather</span><h2>The city can wait.</h2><p>Your ride is paused.</p><button id="resume" class="primary">Keep riding ↗</button><button id="quit" class="secondary">Back to the garage</button><button class="secondary feedback-open">💡 Share an idea</button>`;$('#overlay').classList.remove('hidden');$('#resume').focus();bindFeedbackButtons();$('#resume').onclick=()=>{$('#hud').inert=false;sim.resume();$('#overlay').classList.add('hidden');void audio.init();};$('#quit').onclick=menu;}else if(sim.status==='paused'){$('#hud').inert=false;sim.resume();$('#overlay').classList.add('hidden');}}
@@ -215,7 +215,7 @@ function frame(now:number){const dt=Math.min((now-last)/1000,.05);last=now;
  audio.update(sim.speed,VEHICLES[selected].id,sim.status==='playing',{neighborhood:sim.neighborhood,intensity:.5+lesson*.22,rear:rear?{kind:rear.kind,urgency:rear.urgency,x:rear.x}:undefined,traffic:sim.traffic,playerZ:sim.z,effects:{boost:sim.effects.boost,boostFraction:sim.effects.boost/Math.max(1,sim.powerUps.chaSeconds),magnet:sim.effects.magnet}});
  if(sim.status==='playing'&&sim.neighborhood!==lastDistrict){lastDistrict=sim.neighborhood;announceDistrict();}
  if(now>districtUntil||rear)$('#district-banner').classList.remove('visible');
- $('#rear-alert').classList.toggle('hidden',!rear||sim.status!=='playing');
+ $('#rear-alert').classList.toggle('hidden',!rear||sim.status!=='playing');$('#authority-hud').classList.toggle('faded',sim.elapsed>6);
  if(rear){const swerving=now<swerveUntil;$('#rear-title').textContent=`${rear.kind==='bus'?'BUS':'TRUCK'} ${swerving?'SWERVES ROUND YOU!':'BEHIND!'}`;$('#rear-alert small').textContent=swerving?'Hold your line':'Leave the highlighted line';$('#rear-alert').style.setProperty('--urgency',String(rear.urgency));$('#rear-vehicle').style.left=`${Math.max(8,Math.min(92,(rear.x+5.3)/10.6*100))}%`;$('#rear-player').style.left=`${(sim.x+5.3)/10.6*100}%`;}
  if(sim.status==='playing'&&sim.elapsed>nextVendor){nextVendor+=18;if(now>toastUntil&&!rear){audio.say(districtCall(sim.neighborhood,callCount++));}}
  // Fetch the voices of the district 120 m ahead (and, on the first frame, the current one) before the rider gets there.
@@ -226,7 +226,7 @@ function frame(now:number){const dt=Math.min((now-last)/1000,.05);last=now;
   if(event.type==='horn'){hornUntil=now+250;$('#horn').classList.add('ringing');audio.horn(VEHICLES[selected].id,equippedHorn(save,VEHICLES[selected].id));if(!rear)showToast(event.text);}
   if(event.type==='warning'){showToast(event.text);if(event.text.includes('Ostad'))audio.say('bus-helper-plastic');if(/cow|goru/i.test(event.text))audio.warning('cow',(event.x??0)/5.3);}
   // The rear alert card itself carries these, so no toast stacks under it onto the rider on a short landscape screen.
-  if(event.type==='rear-warning'){clearCaption();audio.warning('rear',(event.x??0)/5.3);}if(event.type==='rear-swerve'){clearCaption();audio.warning('rear',(event.x??0)/5.3);swerveUntil=now+2500;}
+  if(event.type==='rear-warning'){clearCaption();if(!toastPriority){toastUntil=0;$('#toast').classList.remove('shown');}audio.warning('rear',(event.x??0)/5.3);}if(event.type==='rear-swerve'){clearCaption();audio.warning('rear',(event.x??0)/5.3);swerveUntil=now+2500;}
   if(event.type==='paan-warning'){clearCaption();audio.warning('paan',(event.x??0)/5.3);showToast(event.text,true);}
   if(event.type==='crash'){lastFailure=event.text;if(/paan/i.test(event.text)){splashUntil=now+1900;$('#paan-splash').classList.add('splashed');}audio.impact();audio.say('crash-chokhe');showToast(event.text,true);$('#impact').classList.add('hit');feedbackUntil=now+260;}
   if(event.type==='coin')audio.coin(event.chain??1,event.value===5?5:1);if(event.type==='snack'){audio.snack(event.kind??'cha');if(event.kind==='cha')audio.say('cha-ah');showToast(event.text);}if(event.type==='stomach'){audio.stomach();audio.say('stomach-gurgur');showToast(event.text,true);}if(event.type==='belly'){audio.belly();showToast(event.text);}
@@ -255,7 +255,7 @@ if(reviewMode){
  const hudScenes=[['Ahead of gold',2,0,300,14,3,1],['Lost heart',0,1,230,26,2,1],['Behind gold',3,1,140,60,3,0],['Gold time gone',4,2,520,140,1,6],['HUD toast',1,0,90,8,3,2],['Rear bus + toast',0,1,180,20,2,0]] as const;
  for(const [name,index,mission,distance,elapsed,health,shaves] of hudScenes){const b=document.createElement('button');b.textContent=name;b.onclick=()=>{selected=index;lesson=mission;void start();sim.distance=distance;sim.z=-distance;sim.remaining=sim.routeLength-distance;sim.speed=VEHICLES[index].maxSpeed*.8;sim.elapsed=elapsed;sim.health=health;sim.nearMisses=shaves;sim.score=1240;sim.taka=86;lastDistrict=sim.neighborhood;$('#district-name').textContent=districts[sim.neighborhood].name;sim.pause();districtUntil=0;$('#district-banner').classList.remove('visible');toastUntil=0;$('#toast').classList.remove('shown');
   if(name.includes('toast')){toastPriority=0;showToast('এই, চা! গরম চা! · Hot tea, fresh from the kettle.');toastUntil=performance.now()+6e5;$('#combo').innerHTML='<small>বাঁচলাম!</small>Close shave ×2';$('#combo').classList.add('visible','close-shave');comboUntil=performance.now()+6e5;Object.assign(sim.effects,{boost:3.4,magnet:5.6});}
-  if(name.startsWith('Rear')){sim.traffic.push({id:9004,kind:'bus',x:0,z:30,speed:18,width:2.4,length:6.5,passed:false,warn:true,behavior:'rear-threat',phase:'warning',warningRemaining:3});sim.rearThreats.push({actorId:9004,kind:'bus',x:0,z:30,urgency:.6,timeToContact:3,warningRemaining:3,phase:'warning'});toastPriority=0;showToast('Bus behind! Move out of its lane.',true);toastUntil=performance.now()+6e5;sim.resume();}};$('#review-scenes').append(b);}
+  if(name.startsWith('Rear')){sim.traffic.push({id:9004,kind:'bus',x:0,z:30,speed:18,width:2.4,length:6.5,passed:false,warn:true,behavior:'rear-threat',phase:'warning',warningRemaining:3});sim.rearThreats.push({actorId:9004,kind:'bus',x:0,z:30,urgency:.6,timeToContact:3,warningRemaining:3,phase:'warning'});sim.resume();}};$('#review-scenes').append(b);}
  // Dev-only sound check: play each bank sound by itself to judge it by ear.
  const check=document.createElement('details');check.innerHTML='<summary>Sound check</summary>';for(const id of Object.keys(SOUNDS) as SoundId[]){const b=document.createElement('button');b.textContent=id;b.onclick=()=>{void audio.init().then(()=>audio.audition(id));};check.append(b);}$('#review-tools').append(check);
  const status=document.createElement('output');status.id='sound-check-status';check.append(status);let clock=0;const say=(t:string)=>{status.textContent=t;};
