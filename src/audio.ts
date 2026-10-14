@@ -5,6 +5,7 @@ import { asDistrict, streetCue, type Cue } from './soundscape';
 import { MEDAL, type MusicState } from './music';
 import { MusicPlayer } from './musicplayer';
 import { lineById, linesFor, sanitizeManifest, voiceSource, voiceUrl, type District, type VoiceLine, type VoiceManifest } from './voices';
+import { playThroughSilentSwitch, type SilentSwitchDevice, type SilentSwitchRoute } from './silent-switch';
 export interface StreetAudioContext {
   neighborhood: string;
   intensity: number;
@@ -66,11 +67,14 @@ export class GameAudio {
   private lastCoin = -10;
   private musicBus?: GainNode;
   private music?: MusicPlayer;
+  private mediaRoute?: SilentSwitchRoute;
   musicOn = true;
 
   constructor(private clock: () => number = () => performance.now() / 1000) {}
 
   async init(): Promise<void> {
+    // Runs inside the tap, before any await, so iOS lets the game play through the silent switch like a video.
+    if (!this.muted) { this.mediaRoute ??= playThroughSilentSwitch(navigator as unknown as SilentSwitchDevice, () => new Audio()); this.mediaRoute.resume(); }
     if (!this.context) {
       const AudioClass = window.AudioContext || (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
       if (!AudioClass) return;
@@ -157,7 +161,7 @@ export class GameAudio {
   setMuted(value: boolean): void {
     this.muted = value;
     if (this.context) this.master?.gain.setTargetAtTime(value ? 0 : 0.48, this.context.currentTime, 0.03);
-    if (value) this.silenceRide();
+    if (value) { this.silenceRide(); this.mediaRoute?.stop(); }
   }
 
   /** The adaptive music follows the screen, district, speed, combo and cha; muted, hidden or switched off means silence. */
